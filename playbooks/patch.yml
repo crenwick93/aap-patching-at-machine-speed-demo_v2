@@ -44,7 +44,8 @@
           work_notes: |
             [code]
             <h3>Applying package patch — PRODUCTION</h3>
-            <p>Emergency CR <b>{{ cr_number }}</b> approved. Applying identical canary remediation to prod.</p>
+            <p>Emergency CR <b>{{ cr_number }}</b> approved. Applying production remediation
+            (same package upgrade path validated on DEV canary).</p>
             <ul>
               <li><b>Strategy:</b> dnf upgrade --cve; reboot only if <code>needs-restarting</code> requires it</li>
               <li><b>Targets:</b> rhel-prod-01, rhel-prod-02, rhel-prod-03</li>
@@ -161,11 +162,11 @@
         kernel_impact_note: >-
           {% if uname_before_cmd.stdout == uname_after_cmd.stdout %}
           KERNEL UNCHANGED — {{ uname_after_cmd.stdout }}
-          This remediation upgraded userspace packages only. Running kernel stayed the same;
-          needs-restarting did not require a reboot. Proof the fix is not a kernel upgrade path.
+          Userspace packages only; running kernel stayed the same and needs-restarting
+          did not require a reboot.
           {% else %}
           KERNEL CHANGED — {{ uname_before_cmd.stdout }} → {{ uname_after_cmd.stdout }}
-          This CVE path included a kernel/core package update; reboot was required to activate it.
+          Kernel/core packages were in the update set; reboot was required to activate them.
           {% endif %}
 
     - name: Publish patch results

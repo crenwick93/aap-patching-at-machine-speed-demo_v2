@@ -36,7 +36,7 @@
     - name: List packages that would update for triggered CVE
       ansible.builtin.shell: >
         dnf check-update --cve {{ triggered_cve }} 2>/dev/null
-        | awk '/^[a-zA-Z0-9]/{print $1}'
+        | awk '/\.(x86_64|noarch|aarch64|i686)[[:space:]]/{print $1}'
         | sort -u
       register: cve_pkg_list_cmd
       changed_when: false
@@ -46,23 +46,32 @@
     - name: Build package exposure / upgrade plan for triggered CVE
       ansible.builtin.shell: |
         python3 <<'PY'
-        import json, subprocess
+        import json, subprocess, re
         cve = "{{ triggered_cve }}"
         # Available updates for this CVE: name.arch  version-release  repo
         chk = subprocess.run(
             ["dnf", "check-update", "--cve", cve],
             capture_output=True, text=True
         )
+        arch_re = re.compile(r"\.(x86_64|noarch|aarch64|i686)$")
+        skip_re = re.compile(
+            r"^(Last metadata|Security:|Updating |Unable |This system|No match|Error:)",
+            re.I,
+        )
         updates = {}
         for line in chk.stdout.splitlines():
             line = line.strip()
-            if not line or line.startswith("Last metadata") or line.startswith("Security"):
+            if not line or skip_re.match(line):
                 continue
             parts = line.split()
             if len(parts) < 2:
                 continue
             nevra_name = parts[0]  # e.g. php.x86_64
             target_ver = parts[1]  # e.g. 8.0.30-8.el9_8.1
+            if not arch_re.search(nevra_name):
+                continue
+            if not any(c.isdigit() for c in target_ver):
+                continue
             base = nevra_name.rsplit(".", 1)[0]
             updates[base] = {"available": target_ver, "repo": parts[2] if len(parts) > 2 else ""}
 

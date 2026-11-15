@@ -32,14 +32,14 @@
         impact: high
         urgency: high
         short_description: >-
-          Critical CVE detected — {{ advisory_id | default('RHSA-2026:87151') }}
+          Important CVE detected — {{ advisory_id | default('RHSA-2026:87151') }}
           affecting Trading Service (Dev)
         description: |
-          Red Hat Insights detected a critical security advisory
+          Red Hat Insights detected an Important security advisory
           affecting the Trading Service Dev environment.
 
           Advisory: {{ advisory_id | default('RHSA-2026:87151') }}
-          Severity: {{ severity | default('Critical') }}
+          Severity: {{ severity | default('Important') }}
           Synopsis: {{ synopsis | default('Important: security update') }}
           Trigger host: {{ affected_host | default('N/A') }}
 
@@ -81,14 +81,14 @@
         impact: high
         urgency: high
         short_description: >-
-          Critical CVE detected — {{ advisory_id | default('RHSA-2026:87151') }}
+          Important CVE detected — {{ advisory_id | default('RHSA-2026:87151') }}
           affecting Trading Service (Prod)
         description: |
-          Red Hat Insights detected a critical security advisory
+          Red Hat Insights detected an Important security advisory
           affecting the Trading Service Prod environment.
 
           Advisory: {{ advisory_id | default('RHSA-2026:87151') }}
-          Severity: {{ severity | default('Critical') }}
+          Severity: {{ severity | default('Important') }}
           Synopsis: {{ synopsis | default('Important: security update') }}
           Trigger host: {{ affected_host | default('N/A') }}
 

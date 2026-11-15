@@ -121,7 +121,7 @@ for entry in $NODES; do
 
   node_id=$(create_ci "cmdb_ci_linux_server" "{
     \"name\": \"${node}\",
-    \"short_description\": \"RHEL 9.8 demo node — ${env_label} environment\",
+    \"short_description\": \"RHEL 9.8 Trading Service node — ${env_label} environment\",
     \"os\": \"Linux Red Hat\",
     \"os_version\": \"9.8\",
     \"classification\": \"${env_label}\",

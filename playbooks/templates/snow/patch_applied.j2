@@ -16,8 +16,8 @@
 <p><b>{% if uname_before_cmd.stdout == uname_after_cmd.stdout %}KERNEL UNCHANGED{% else %}KERNEL CHANGED{% endif %}</b>
 — <code>{{ uname_after_cmd.stdout }}</code></p>
 {% if uname_before_cmd.stdout == uname_after_cmd.stdout %}
-<p>Userspace packages only. Running kernel stayed the same; <code>needs-restarting</code> did not require a reboot.
-Proof this path is <i>not</i> a kernel upgrade.</p>
+<p>Userspace packages only. Running kernel stayed the same;
+<code>needs-restarting</code> did not require a reboot.</p>
 {% else %}
 <p>Kernel/core packages were in the update set:
 <code>{{ uname_before_cmd.stdout }}</code> → <code>{{ uname_after_cmd.stdout }}</code>. Reboot was required.</p>

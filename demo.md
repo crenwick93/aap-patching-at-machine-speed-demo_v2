@@ -101,7 +101,7 @@ sudo needs-restarting -r; echo "exit=$?"
     7. **Awaiting CR Approval** — "Workflow pauses until a human approves in ServiceNow."
     8. **Apply Patch (Prod)** — "Same upgrade path on production."
     9. **Post-checks (Prod)** — "Same validation on production."
-    10. **Post-Implementation Review** — "Resolve incidents, move CR to review, mark CVE Resolved in Insights."
+    10. **Post-Implementation Review** — "Resolve incidents, move CR to review. Insights clears the CVE on the next evaluation after the fixed RPMs are reported."
   - "Dev is fully automated. Production has a governance gate. One human decision: approve or reject the Change Request."
 
 ---
@@ -119,7 +119,7 @@ sudo needs-restarting -r; echo "exit=$?"
 ```
 
 - Pause and talk through the payload:
-  - "Critical/Important CVE, CVSS 8.1, known exploit, detected on rhel-dev-01"
+  - "Important CVE, CVSS 8.1, known exploit, detected on rhel-dev-01"
   - "Insights has sent this event to Event-Driven Ansible"
   - "EDA triggers our entire response workflow — no human intervention to start"
 
@@ -213,7 +213,7 @@ sudo needs-restarting -r; echo "exit=$?"
 - **Permanent fix**: "Package upgrade is the lasting remediation. No temporary mitigation, no second CR."
 - **Governance**: "Dev automated; production paused for CAB approval."
 - **SBOM**: "Before/after bill of materials on every host."
-- **Insights closed-loop**: "Automation marks the CVE Resolved so the SOC isn't waiting on the next scan."
+- **Insights closed-loop**: "We force an Insights check-in with the updated RPM set so the scanner clears on the next evaluation — no manual CVE status API."
 - **If asked about kpatch:** "Kpatch is the zero-reboot stop-gap for kernel. This workflow is the permanent package fix — and for userland CVEs like PHP, there was never a reboot to avoid."
 
 ---

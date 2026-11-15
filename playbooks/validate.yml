@@ -265,7 +265,7 @@
         other:
           os_version: "RHEL 9 — kernel {{ running_kernel_cmd.stdout }}"
           short_description: >-
-            RHEL 9 demo node — patched {{ ansible_date_time.date }}
+            RHEL 9 Trading Service node — patched {{ ansible_date_time.date }}
       when: ci_sys_id is defined
       delegate_to: localhost
 
@@ -283,7 +283,7 @@
         other:
           os_version: "RHEL 9 — kernel {{ running_kernel_cmd.stdout }}"
           short_description: >-
-            RHEL 9 demo node — patched {{ ansible_date_time.date }}
+            RHEL 9 Trading Service node — patched {{ ansible_date_time.date }}
       when:
         - ci_sys_id is not defined
         - ci_by_name.records | default([]) | length > 0

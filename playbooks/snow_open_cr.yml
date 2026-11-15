@@ -33,7 +33,7 @@
           DEV environment. Post-checks PASSED. Recommendation: SAFE TO DEPLOY TO PRODUCTION.
 
           Advisory: {{ advisory_id | default('RHSA-2026:87151') }}
-          Severity: {{ severity | default('Critical') }}
+          Severity: {{ severity | default('Important') }}
           CVEs: {{ cve_list | default([]) | join(', ') }}
           Reboot required: {{ reboot_required_for_fix | default(false) }}
           Related Dev Incident: {{ inc_dev_number | default('N/A') }}
@@ -41,8 +41,8 @@
 
           Canary test results (package exposure, per-host checks, SBOM):
           see Dev Incident {{ inc_dev_number | default('N/A') }} work notes.
-        priority: 1
-        risk: low
+        priority: 2
+        risk: moderate
         impact: 2
         category: Software
         assignment_group: "CAB Approval"
@@ -52,8 +52,8 @@
           business_service: "{{ biz_svc_lookup.records[0].sys_id | default(omit) }}"
           justification: |
             Red Hat Insights has identified {{ advisory_id | default('RHSA-2026:87151') }}
-            as a critical vulnerability affecting Trading Service nodes. The vulnerability
-            must be remediated immediately to maintain the security posture of the platform.
+            as an Important vulnerability affecting Trading Service nodes. The vulnerability
+            must be remediated promptly to maintain the security posture of the platform.
 
             DEV canary completed successfully ({{ canary_result | default('PASS') }}).
             Recommendation: {{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}.
