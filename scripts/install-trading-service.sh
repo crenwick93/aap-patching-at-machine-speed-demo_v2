@@ -115,12 +115,16 @@ for i in json.load(sys.stdin):
 wait
 
 echo ""
-echo "Done. Open a canary host in the browser, e.g.:"
+echo "Trading Service URLs (DEV + PROD):"
 echo "$HOSTS" | python3 -c "
 import json, sys
-for i in json.load(sys.stdin):
-    if i.get('Name') == 'rhel-dev-01' and i.get('IP'):
-        print(f\"  http://{i['IP']}/\")
-        print(f\"  http://{i['IP']}/health\")
-        break
+hosts = sorted([h for h in json.load(sys.stdin) if h.get('Name') and h.get('IP')], key=lambda h: h['Name'])
+dev = [h for h in hosts if 'dev' in h['Name']]
+prod = [h for h in hosts if 'prod' in h['Name']]
+print('  DEV')
+for h in dev:
+    print(f\"    {h['Name']:<16}  http://{h['IP']}/\")
+print('  PROD')
+for h in prod:
+    print(f\"    {h['Name']:<16}  http://{h['IP']}/\")
 "

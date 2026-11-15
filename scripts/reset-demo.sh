@@ -446,12 +446,36 @@ echo ""
 echo "+============================================================+"
 echo "|                    Reset Complete                         |"
 echo "+============================================================+"
-echo "|  * 6 fresh RHEL instances provisioned                    |"
-echo "|  * Hostnames set via cloud-init                          |"
-echo "|  * AAP inventory sync triggered                          |"
-echo "|  * /etc/hosts updated for demo SSH                       |"
-echo "|                                                          |"
-echo "|  Next steps:                                             |"
-echo "|  1. Wait ~60s for inventory sync to complete             |"
-echo "|  2. Run: ./scripts/simulate-cve-event.sh                 |"
-echo "+============================================================+"
+
+# Always print DEV + PROD Trading Service URLs after reset
+FLEET_JSON=$(aws ec2 describe-instances \
+  --region "$REGION" \
+  --filters "Name=tag:demo,Values=patching-full" "Name=instance-state-name,Values=running" \
+  --query "Reservations[].Instances[].{Name:Tags[?Key=='Name']|[0].Value,IP:PublicIpAddress,Env:Tags[?Key=='env']|[0].Value}" \
+  --output json 2>/dev/null || echo "[]")
+
+echo "$FLEET_JSON" | python3 -c "
+import json, sys
+hosts = json.load(sys.stdin)
+hosts = sorted([h for h in hosts if h.get('Name') and h.get('IP')], key=lambda h: h['Name'])
+dev = [h for h in hosts if (h.get('Env') or '').startswith('dev') or 'dev' in h['Name']]
+prod = [h for h in hosts if (h.get('Env') or '').startswith('prod') or 'prod' in h['Name']]
+
+def block(title, rows):
+    print(f'|  {title}')
+    print('|  ' + '-' * 56)
+    for h in rows:
+        print(f\"|  {h['Name']:<16}  http://{h['IP']}/\")
+        print(f\"|  {'':16}  http://{h['IP']}/health\")
+        print(f\"|  {'':16}  ssh -i patching-demo.pem ec2-user@{h['IP']}\")
+    if not rows:
+        print('|  (none)')
+    print('|')
+
+print('|')
+block('DEV  — Trading Service', dev)
+block('PROD — Trading Service', prod)
+print('|  Next: wait ~60s for inventory sync, then:')
+print('|    ./scripts/simulate-cve-event.sh')
+print('+============================================================+')
+"
