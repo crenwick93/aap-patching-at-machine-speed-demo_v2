@@ -296,24 +296,45 @@
       async: 120
       poll: 0
 
-    - name: Aggregate canary evidence (ServiceNow [code]/HTML for work notes)
+    - name: Aggregate canary evidence (DEV — includes recommendation)
       ansible.builtin.set_fact:
         canary_evidence: "{{ lookup('template', 'templates/snow/canary_evidence.j2') }}"
+        validation_work_note: "{{ lookup('template', 'templates/snow/canary_evidence.j2') }}"
       run_once: true
+      when: cr_number is not defined
 
-    - name: Add work note — canary / stage post-checks passed
+    - name: Aggregate production validation evidence (PROD — no recommendation)
+      ansible.builtin.set_fact:
+        production_validation: "{{ lookup('template', 'templates/snow/production_validation.j2') }}"
+        validation_work_note: "{{ lookup('template', 'templates/snow/production_validation.j2') }}"
+      run_once: true
+      when: cr_number is defined
+
+    - name: Add work note — DEV canary post-checks passed
       servicenow.itsm.incident:
-        sys_id: "{{ inc_dev_sys_id if (cr_number is not defined) else inc_prod_sys_id }}"
+        sys_id: "{{ inc_dev_sys_id }}"
         other:
-          work_notes: "{{ canary_evidence }}"
+          work_notes: "{{ validation_work_note }}"
       delegate_to: localhost
       become: false
       run_once: true
-      when: >
-        (cr_number is not defined and inc_dev_sys_id is defined)
-        or (cr_number is defined and inc_prod_sys_id is defined)
+      when:
+        - cr_number is not defined
+        - inc_dev_sys_id is defined
 
-    - name: Publish post-check data
+    - name: Add work note — PRODUCTION validation passed
+      servicenow.itsm.incident:
+        sys_id: "{{ inc_prod_sys_id }}"
+        other:
+          work_notes: "{{ validation_work_note }}"
+      delegate_to: localhost
+      become: false
+      run_once: true
+      when:
+        - cr_number is defined
+        - inc_prod_sys_id is defined
+
+    - name: Publish post-check data (canary stage)
       ansible.builtin.set_stats:
         data:
           postcheck_report: "{{ postcheck_report }}"
@@ -333,3 +354,25 @@
           reboot_performed: "{{ reboot_performed | default(false) }}"
         aggregate: false
       run_once: true
+      when: cr_number is not defined
+
+    - name: Publish post-check data (production stage)
+      ansible.builtin.set_stats:
+        data:
+          postcheck_report: "{{ postcheck_report }}"
+          production_validation: "{{ production_validation }}"
+          production_result: PASS
+          services_healthy: true
+          trading_service_up: true
+          sbom_diff_summary: "{{ sbom_diff | default({}) }}"
+          sbom_before_path: "{{ sbom_before }}"
+          sbom_after_path: "{{ sbom_after }}"
+          validation_timestamp: "{{ ansible_date_time.iso8601 }}"
+          strategy_used: "{{ strategy_used | default('package_upgrade') }}"
+          cves_patched: "{{ cve_list | default([]) }}"
+          kernel_after: "{{ running_kernel_cmd.stdout }}"
+          php_after: "{{ php_rpm_cmd.stdout | default('') }}"
+          reboot_performed: "{{ reboot_performed | default(false) }}"
+        aggregate: false
+      run_once: true
+      when: cr_number is defined

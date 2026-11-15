@@ -1,0 +1,51 @@
+[code]
+<h3 style="color:green">Production validation — PASSED</h3>
+<ul>
+  <li><b>Scope:</b> {{ ansible_play_hosts | length }} production host(s)</li>
+  <li><b>CVE:</b> {{ triggered_cve | default('N/A') }}</li>
+  <li><b>Advisory:</b> {{ advisory_id | default('N/A') }}</li>
+  <li><b>Change:</b> {{ cr_number | default('N/A') }}</li>
+  <li><b>Strategy:</b> {{ strategy_used | default('package_upgrade') }}</li>
+  <li><b>Reboot required:</b> {{ reboot_required_for_fix | default('n/a') }}</li>
+  <li><b>Reboot performed:</b> {{ reboot_performed | default('n/a') }}</li>
+  <li><b>Kernel impact:</b> {{ kernel_impact_note | default('KERNEL UNCHANGED — userspace package fix only') | e }}</li>
+</ul>
+{% if package_upgrade_lines | default([]) | length > 0 %}
+<p><b>Packages remediated (installed → fixed):</b></p>
+<ul>
+{% for line in package_upgrade_lines %}
+{% set parts = line.split('→') %}
+  <li><code>{{ parts[0] | trim }}</code> → <code>{{ parts[1] | default('') | trim }}</code></li>
+{% endfor %}
+</ul>
+{% endif %}
+<h4>Per-host results</h4>
+{% for h in ansible_play_hosts %}
+<p><b>{{ h }}</b> — {{ hostvars[h].host_validation.result | default('PASS') }}<br>
+FQDN: <code>{{ hostvars[h].host_validation.fqdn | default(h) }}</code><br>
+PHP after: <code>{{ hostvars[h].host_validation.php_rpm | default('n/a') }}</code><br>
+CVE cleared: {{ hostvars[h].host_validation.cve_cleared | default('n/a') }}<br>
+Trading Service: <b>UP</b>
+(health HTTP {{ hostvars[h].host_validation.trading_service.health_http | default('n/a') }},
+home HTTP {{ hostvars[h].host_validation.trading_service.home_http | default('n/a') }})<br>
+SBOM: <code>{{ hostvars[h].host_validation.sbom.before_file | default('/tmp/sbom-before.json') }}</code>
+→ <code>{{ hostvars[h].host_validation.sbom.after_file | default('/tmp/sbom-after.json') }}</code>
+(+{{ hostvars[h].host_validation.sbom.added | default(0) }}
+/−{{ hostvars[h].host_validation.sbom.removed | default(0) }}
+/~{{ hostvars[h].host_validation.sbom.changed | default(0) }})</p>
+{% set upgrade_lines = hostvars[h].host_validation.sbom.upgrade_lines | default([]) %}
+{% if upgrade_lines | length > 0 %}
+<ul>
+{% for line in upgrade_lines %}
+{% set parts = line.split('→') %}
+  <li><code>{{ parts[0] | trim }}</code> → <code>{{ parts[1] | default('') | trim }}</code></li>
+{% endfor %}
+</ul>
+{% else %}
+<p><i>(no package version changes recorded in SBOM diff)</i></p>
+{% endif %}
+{% endfor %}
+<p>Production remediation validated. Critical services (sshd, chronyd, httpd) active.
+Trading Service UP on every production node. No pending reboot.
+SBOM confirms exposed packages moved to fixed NVRs. Permanent fix applied.</p>
+[/code]

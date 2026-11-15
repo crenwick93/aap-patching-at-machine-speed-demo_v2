@@ -2,7 +2,8 @@
 <h3>Canary validation — PASSED</h3>
 <p><b>Recommendation:</b> <span style="color:green"><b>SAFE TO DEPLOY TO PRODUCTION</b></span></p>
 <ul>
-  <li><b>Scope:</b> {{ ansible_play_hosts | length }} host(s)</li>
+  <li><b>Scope:</b> {{ ansible_play_hosts | length }} DEV canary host(s)</li>
+
   <li><b>CVE:</b> {{ triggered_cve | default('N/A') }}</li>
   <li><b>Advisory:</b> {{ advisory_id | default('N/A') }}</li>
   <li><b>Strategy:</b> {{ strategy_used | default('package_upgrade') }}</li>
