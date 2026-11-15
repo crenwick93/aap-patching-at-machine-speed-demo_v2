@@ -291,6 +291,7 @@
           Strategy: {{ strategy_used | default('package_upgrade') }}
           Reboot required (assessed): {{ reboot_required_for_fix | default('n/a') }}
           Reboot performed: {{ reboot_performed | default('n/a') }}
+          Kernel impact: {{ kernel_impact_note | default('KERNEL UNCHANGED — userspace package fix only') }}
           Validation time: {{ ansible_date_time.iso8601 }}
 
           Planned exposure (from assessment — installed → fix target):

@@ -150,6 +150,18 @@
           Reboot was {{ 'performed' if (reboot_cmd_result is changed) else 'skipped' }}.
         success_msg: "Host {{ inventory_hostname }} has no pending reboot"
 
+    - name: Build kernel impact talking point
+      ansible.builtin.set_fact:
+        kernel_impact_note: >-
+          {% if uname_before_cmd.stdout == uname_after_cmd.stdout %}
+          KERNEL UNCHANGED — {{ uname_after_cmd.stdout }}
+          This remediation upgraded userspace packages only. Running kernel stayed the same;
+          needs-restarting did not require a reboot. Proof the fix is not a kernel upgrade path.
+          {% else %}
+          KERNEL CHANGED — {{ uname_before_cmd.stdout }} → {{ uname_after_cmd.stdout }}
+          This CVE path included a kernel/core package update; reboot was required to activate it.
+          {% endif %}
+
     - name: Publish patch results
       ansible.builtin.set_stats:
         data:
@@ -161,6 +173,7 @@
           kernel_before: "{{ uname_before_cmd.stdout }}"
           kernel_after: "{{ uname_after_cmd.stdout }}"
           kernel_changed: "{{ uname_before_cmd.stdout != uname_after_cmd.stdout }}"
+          kernel_impact_note: "{{ kernel_impact_note }}"
           reboot_required: "{{ (reboot_needed_cmd.rc | default(0)) != 0 }}"
           reboot_performed: "{{ reboot_cmd_result is changed }}"
           services_restarted: "{{ services_need_restart.stdout_lines | default([]) }}"
@@ -182,12 +195,11 @@
           PHP RPM: {{ php_before_cmd.stdout | default('n/a') }} → {{ php_after_cmd.stdout | default('n/a') }}
           Reboot required: {{ (reboot_needed_cmd.rc | default(0)) != 0 }}
           Reboot performed: {{ reboot_cmd_result is changed }}
-          Kernel unchanged: {{ uname_before_cmd.stdout }}
-          {% if uname_before_cmd.stdout != uname_after_cmd.stdout %}
-          Kernel changed: {{ uname_before_cmd.stdout }} → {{ uname_after_cmd.stdout }}
-          {% endif %}
+
+          {{ kernel_impact_note }}
+
           Services restarted: {{ services_need_restart.stdout_lines | default([]) | join(', ') | default('none') }}
-          Strategy: CVE-targeted package upgrade (not a kernel update unless those packages are in the CVE set)
+          Strategy: CVE-targeted package upgrade
 
     - name: Add work note — package patch successfully applied to dev canary
       servicenow.itsm.incident:
@@ -196,7 +208,7 @@
           work_notes: |
             [AUTOMATED] Package patch successfully applied to all dev canary nodes.
 
-            Strategy: dnf upgrade --cve (permanent package fix — not a kernel upgrade for this CVE)
+            Strategy: dnf upgrade --cve (permanent package fix)
             CVE: {{ triggered_cve | default('N/A') }}
             PHP RPM: {{ php_before_cmd.stdout | default('n/a') }} → {{ php_after_cmd.stdout | default('n/a') }}
             {% if package_upgrade_lines | default([]) | length > 0 %}
@@ -206,9 +218,10 @@
             {% endfor %}
             {% endif %}
             Reboot performed: {{ reboot_cmd_result is changed }}
-            Kernel: unchanged ({{ uname_after_cmd.stdout }})
-            Patch result: SUCCESS
 
+            {{ kernel_impact_note }}
+
+            Patch result: SUCCESS
             Proceeding to raise emergency CR for production deployment.
       delegate_to: localhost
       become: false
@@ -224,7 +237,7 @@
           work_notes: |
             [AUTOMATED] Package patch successfully applied to all production nodes.
 
-            Strategy: dnf upgrade --cve (permanent package fix — not a kernel upgrade for this CVE)
+            Strategy: dnf upgrade --cve (permanent package fix)
             CVE: {{ triggered_cve | default('N/A') }}
             PHP RPM: {{ php_before_cmd.stdout | default('n/a') }} → {{ php_after_cmd.stdout | default('n/a') }}
             {% if package_upgrade_lines | default([]) | length > 0 %}
@@ -234,9 +247,10 @@
             {% endfor %}
             {% endif %}
             Reboot performed: {{ reboot_cmd_result is changed }}
-            Kernel: unchanged ({{ uname_after_cmd.stdout }})
-            Patch result: SUCCESS
 
+            {{ kernel_impact_note }}
+
+            Patch result: SUCCESS
             Running post-implementation checks now.
       delegate_to: localhost
       become: false

@@ -150,6 +150,7 @@ sudo needs-restarting -r; echo "exit=$?"
 
 - "Pre-checks confirm it's safe to patch."
 - "Now it's applying the CVE-targeted package upgrade to dev. No reboot expected for PHP."
+- Talking point after canary patch: "Look at the work notes — **KERNEL UNCHANGED**. Same running kernel before and after. PHP packages moved; `needs-restarting` said no reboot. Same workflow that can do kernel+reboot when required — here it proves we only touched userspace."
 - After "Canary: Post-checks" completes:
   - "CVE cleared from outstanding updates, services healthy, Trading Service UP, SBOM diff captured."
 

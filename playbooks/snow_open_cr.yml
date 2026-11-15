@@ -82,6 +82,7 @@
             - Strategy: dnf upgrade --cve (permanent fix)
             - Reboot required: {{ reboot_required_for_fix | default(false) }}
             - Reboot performed on canary: {{ reboot_performed | default('see canary job') }}
+            - Kernel impact: {{ kernel_impact_note | default('KERNEL UNCHANGED — userspace package fix; running kernel stayed the same') }}
             - Services healthy (sshd, chronyd, httpd): {{ services_healthy | default('yes') }}
             - Trading Service application: {{ 'UP' if (trading_service_up | default(true)) else 'DOWN' }}
             - SBOM baseline: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
