@@ -34,38 +34,13 @@
 
           Advisory: {{ advisory_id | default('RHSA-2026:87151') }}
           Severity: {{ severity | default('Critical') }}
-          Kernel (pre-prod): {{ kernel_version | default('unknown') }}
           CVEs: {{ cve_list | default([]) | join(', ') }}
-          Packages: {{ packages_for_cve | default([]) | join(', ') | default('see canary evidence') }}
           Reboot required: {{ reboot_required_for_fix | default(false) }}
           Related Dev Incident: {{ inc_dev_number | default('N/A') }}
           Related Prod Incident: {{ inc_prod_number | default('N/A') }}
 
-          ========== PACKAGE EXPOSURE / SBOM ==========
-          SBOM baseline file: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
-          {% if package_upgrade_lines | default([]) | length > 0 %}
-          Exposed packages requiring upgrade (installed → fixed target):
-          {% for line in package_upgrade_lines %}
-          {{ line }}
-          {% endfor %}
-          {% else %}
-          {{ package_exposure_report | default('See assessment for package exposure details.') }}
-          {% endif %}
-
-          ========== CANARY TEST RESULTS ==========
-          Result: {{ canary_result | default('PASS') }}
-          Recommendation: {{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}
-          Scope: canary DEV hosts (rhel-dev-01/02/03)
-          Strategy: {{ strategy_used | default('package_upgrade') }}
-          Reboot required: {{ reboot_required_for_fix | default(false) }}
-          Reboot performed: {{ reboot_performed | default('n/a') }}
-          Kernel impact: {{ kernel_impact_note | default('KERNEL UNCHANGED — userspace package fix only') }}
-          Services healthy (sshd, chronyd, httpd): {{ services_healthy | default('yes') }}
-          Trading Service: {{ 'UP' if (trading_service_up | default(true)) else 'DOWN' }}
-          PHP after canary: {{ php_after | default('see host reports') }}
-          SBOM: {{ sbom_before_path | default('/tmp/sbom-before.json') }} → {{ sbom_after_path | default('/tmp/sbom-after.json') }}
-          Per-host canary detail: see CR / Dev Incident work notes (formatted journal entry).
-          =========================================
+          Canary test results (package exposure, per-host checks, SBOM):
+          see Dev Incident {{ inc_dev_number | default('N/A') }} work notes.
         priority: 1
         risk: low
         impact: 2
@@ -80,33 +55,11 @@
             as a critical vulnerability affecting Trading Service nodes. The vulnerability
             must be remediated immediately to maintain the security posture of the platform.
 
-            DEV CANARY COMPLETED SUCCESSFULLY — plain-text summary (HTML detail is in work notes):
+            DEV canary completed successfully ({{ canary_result | default('PASS') }}).
+            Recommendation: {{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}.
 
-            Key gates satisfied:
-            - Canary result: {{ canary_result | default('PASS') }}
-            - Recommendation: {{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}
-            - Strategy: dnf upgrade --cve (permanent fix)
-            - Reboot required: {{ reboot_required_for_fix | default(false) }}
-            - Reboot performed on canary: {{ reboot_performed | default('see canary job') }}
-            - Kernel impact: {{ kernel_impact_note | default('KERNEL UNCHANGED — userspace package fix; running kernel stayed the same') }}
-            - Services healthy (sshd, chronyd, httpd): {{ services_healthy | default('yes') }}
-            - Trading Service application: {{ 'UP' if (trading_service_up | default(true)) else 'DOWN' }}
-            - SBOM baseline: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
-            - SBOM after canary: {{ sbom_after_path | default('/tmp/sbom-after.json') }}
-            - SBOM diff: {{ sbom_diff_summary.added | default([]) | length }} RPMs added, {{ sbom_diff_summary.changed | default({}) | length }} RPMs changed
-            - Package upgrades verified on canary:
-            {% for item in (sbom_diff_summary.changed | default({}) | dict2items) %}
-              * {{ item.key }}: {{ item.value.before }} → {{ item.value.after }}
-            {% else %}
-            {% for line in package_upgrade_lines | default([]) %}
-              * {{ line }}
-            {% else %}
-              * see CR work notes / assessment
-            {% endfor %}
-            {% endfor %}
-            - PHP after canary: {{ php_after | default('see host reports') }}
-
-            {{ audit_report | default('') }}
+            Full canary evidence (hosts, packages, SBOM, service checks) is recorded on
+            Dev Incident {{ inc_dev_number | default('N/A') }} — see that incident's work notes.
           implementation_plan: |
             Implementation is fully automated by Ansible Automation Platform.
             AAP Workflow Job ID: {{ tower_workflow_job_id | default(awx_workflow_job_id | default('N/A')) }}
