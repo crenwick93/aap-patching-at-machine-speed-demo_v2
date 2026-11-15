@@ -125,49 +125,37 @@
           business_service: "{{ biz_svc_lookup.records[0].sys_id | default(omit) }}"
       register: inc_prod_result
 
+    - name: Render assessment work note (dev)
+      ansible.builtin.set_fact:
+        snow_assessment_note_dev: "{{ lookup('template', 'templates/snow/assessment_note.j2') }}"
+      vars:
+        title: "Patch exposure assessment complete — DEV"
+        footer: >-
+          Proceeding with dev canary package upgrade
+          ({{ 'reboot expected' if (reboot_required_for_fix | default(false) | bool) else 'no reboot expected' }}).
+
     - name: Add assessment work notes to Dev Incident
       servicenow.itsm.incident:
         sys_id: "{{ inc_dev_result.record.sys_id }}"
         state: 2
         other:
-          work_notes: |
-            [AUTOMATED] Patch exposure assessment complete.
+          work_notes: "{{ snow_assessment_note_dev }}"
 
-            Kernel: {{ kernel_version | default('unknown') }}
-            Patch available: {{ patch_available | default('unknown') }}
-            Reboot required for fix: {{ reboot_required_for_fix | default(false) }}
-            Related CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
-            Packages: {{ packages_for_cve | default([]) | join(', ') | default('see assessment') }}
-            SBOM baseline: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
-            Upgrade plan:
-            {% for line in package_upgrade_lines | default([]) %}
-              {{ line }}
-            {% endfor %}
-
-            Proceeding with dev canary package upgrade
-            {% if reboot_required_for_fix | default(false) | bool %}(reboot expected){% else %}(no reboot expected){% endif %}.
+    - name: Render assessment work note (prod)
+      ansible.builtin.set_fact:
+        snow_assessment_note_prod: "{{ lookup('template', 'templates/snow/assessment_note.j2') }}"
+      vars:
+        title: "Patch exposure assessment complete — PROD"
+        footer: >-
+          Awaiting dev canary result before proceeding.
+          Emergency CR will be raised for production approval.
 
     - name: Add assessment work notes to Prod Incident
       servicenow.itsm.incident:
         sys_id: "{{ inc_prod_result.record.sys_id }}"
         state: 2
         other:
-          work_notes: |
-            [AUTOMATED] Patch exposure assessment complete.
-
-            Kernel: {{ kernel_version | default('unknown') }}
-            Patch available: {{ patch_available | default('unknown') }}
-            Reboot required for fix: {{ reboot_required_for_fix | default(false) }}
-            Related CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
-            Packages: {{ packages_for_cve | default([]) | join(', ') | default('see assessment') }}
-            SBOM baseline: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
-            Upgrade plan:
-            {% for line in package_upgrade_lines | default([]) %}
-              {{ line }}
-            {% endfor %}
-
-            Awaiting dev canary result before proceeding.
-            Emergency CR will be raised for production approval.
+          work_notes: "{{ snow_assessment_note_prod }}"
 
     - name: Display Incident details
       ansible.builtin.debug:

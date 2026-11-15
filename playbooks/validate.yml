@@ -279,60 +279,16 @@
       async: 120
       poll: 0
 
-    - name: Aggregate canary evidence across all hosts in this play
+    - name: Aggregate canary evidence (ServiceNow [code]/HTML for work notes)
       ansible.builtin.set_fact:
-        canary_evidence: |
-          CANARY VALIDATION — PASSED
-          Recommendation: SAFE TO DEPLOY TO PRODUCTION
-
-          Scope: {{ ansible_play_hosts | length }} host(s) in this stage
-          Triggered CVE: {{ triggered_cve | default('N/A') }}
-          Advisory: {{ advisory_id | default('N/A') }}
-          Strategy: {{ strategy_used | default('package_upgrade') }}
-          Reboot required (assessed): {{ reboot_required_for_fix | default('n/a') }}
-          Reboot performed: {{ reboot_performed | default('n/a') }}
-          Kernel impact: {{ kernel_impact_note | default('KERNEL UNCHANGED — userspace package fix only') }}
-          Validation time: {{ ansible_date_time.iso8601 }}
-
-          Planned exposure (from assessment — installed → fix target):
-          {% if package_upgrade_lines | default([]) | length > 0 %}
-          {% for line in package_upgrade_lines %}
-          {{ line }}
-          {% endfor %}
-          {% else %}
-          {{ package_exposure_report | default('(see assessment artifacts)') }}
-          {% endif %}
-
-          Per-host results:
-          {% for h in ansible_play_hosts %}
-          --- {{ h }} ---
-          Result: {{ hostvars[h].host_validation.result | default('PASS') }}
-          FQDN: {{ hostvars[h].host_validation.fqdn | default(h) }}
-          Kernel: {{ hostvars[h].host_validation.kernel | default('n/a') }}
-          PHP RPM (after patch): {{ hostvars[h].host_validation.php_rpm | default('n/a') }}
-          CVE cleared: {{ hostvars[h].host_validation.cve_cleared | default('n/a') }}
-          Pending reboot: {{ hostvars[h].host_validation.pending_reboot | default(false) }}
-          Services: {{ hostvars[h].host_validation.services | default({}) }}
-          Trading Service: UP (health HTTP {{ hostvars[h].host_validation.trading_service.health_http | default('n/a') }}, home HTTP {{ hostvars[h].host_validation.trading_service.home_http | default('n/a') }})
-          SBOM files: {{ hostvars[h].host_validation.sbom.before_file | default('/tmp/sbom-before.json') }} → {{ hostvars[h].host_validation.sbom.after_file | default('/tmp/sbom-after.json') }}
-          SBOM delta: +{{ hostvars[h].host_validation.sbom.added | default(0) }} / -{{ hostvars[h].host_validation.sbom.removed | default(0) }} / ~{{ hostvars[h].host_validation.sbom.changed | default(0) }}
-          Verified package upgrades (before → after):
-          {{ hostvars[h].host_validation.sbom.upgrade_detail | default('(none)') }}
-
-          {% endfor %}
-          Summary: All canary hosts passed post-checks. Critical services (sshd, chronyd, httpd) are active.
-          Trading Service application responds UP on every canary node. No pending reboot remains.
-          SBOM confirms exposed packages were upgraded to the fixed NVRs; production deployment is recommended.
+        canary_evidence: "{{ lookup('template', 'templates/snow/canary_evidence.j2') }}"
       run_once: true
 
     - name: Add work note — canary / stage post-checks passed
       servicenow.itsm.incident:
         sys_id: "{{ inc_dev_sys_id if (cr_number is not defined) else inc_prod_sys_id }}"
         other:
-          work_notes: |
-            [AUTOMATED] Post-checks PASSED.
-
-            {{ canary_evidence }}
+          work_notes: "{{ canary_evidence }}"
       delegate_to: localhost
       become: false
       run_once: true

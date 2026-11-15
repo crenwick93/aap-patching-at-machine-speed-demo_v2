@@ -152,31 +152,32 @@
       servicenow.itsm.change_request:
         sys_id: "{{ cr_result.record.sys_id }}"
         other:
-          work_notes: |
-            [AUTOMATED] Canary validation attached for CAB review.
-
-            {{ canary_evidence | default('See description / justification for canary results.') }}
-
-            Approving this CR authorizes identical remediation on production.
+          # canary_evidence is already wrapped in [code]...[/code] from validate.yml
+          work_notes: "{{ canary_evidence | default('[code]<p>Canary passed — see incident work notes.</p>[/code]') }}"
 
     - name: Update Dev Incident with CR reference
       servicenow.itsm.incident:
         sys_id: "{{ inc_dev_sys_id }}"
         other:
-          work_notes: >-
-            Dev canary PASSED ({{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}).
-            Emergency CR {{ cr_result.record.number }} raised for production
-            (reboot required: {{ reboot_required_for_fix | default(false) }}).
+          work_notes: |
+            [code]
+            <p><b>Dev canary PASSED</b> —
+            {{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}.<br>
+            Emergency CR <b>{{ cr_result.record.number }}</b> raised for production
+            (reboot required: {{ reboot_required_for_fix | default(false) }}).</p>
+            [/code]
       when: inc_dev_sys_id is defined
 
     - name: Update Prod Incident with CR reference
       servicenow.itsm.incident:
         sys_id: "{{ inc_prod_sys_id }}"
         other:
-          work_notes: >-
-            Emergency CR {{ cr_result.record.number }} raised. Dev canary evidence attached.
+          work_notes: |
+            [code]
+            <p>Emergency CR <b>{{ cr_result.record.number }}</b> raised. Dev canary evidence attached.<br>
             Awaiting CAB approval before production remediation
-            (reboot required: {{ reboot_required_for_fix | default(false) }}).
+            (reboot required: {{ reboot_required_for_fix | default(false) }}).</p>
+            [/code]
       when: inc_prod_sys_id is defined
 
     - name: Display CR details

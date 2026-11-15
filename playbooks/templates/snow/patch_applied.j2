@@ -1,0 +1,23 @@
+[code]
+<h3>{{ title }}</h3>
+<p><b>Strategy:</b> dnf upgrade --cve (permanent package fix)<br>
+<b>CVE:</b> {{ triggered_cve | default('N/A') }}<br>
+<b>PHP RPM:</b> <code>{{ php_before_cmd.stdout | default('n/a') }}</code> → <code>{{ php_after_cmd.stdout | default('n/a') }}</code><br>
+<b>Reboot performed:</b> {{ reboot_cmd_result is changed }}</p>
+{% if package_upgrade_lines | default([]) | length > 0 %}
+<p><b>Packages upgraded (installed → fixed):</b></p>
+<pre>{% for line in package_upgrade_lines %}{{ line }}
+{% endfor %}</pre>
+{% endif %}
+<p><b>{% if uname_before_cmd.stdout == uname_after_cmd.stdout %}KERNEL UNCHANGED{% else %}KERNEL CHANGED{% endif %}</b>
+— <code>{{ uname_after_cmd.stdout }}</code></p>
+{% if uname_before_cmd.stdout == uname_after_cmd.stdout %}
+<p>Userspace packages only. Running kernel stayed the same; <code>needs-restarting</code> did not require a reboot.
+Proof this path is <i>not</i> a kernel upgrade.</p>
+{% else %}
+<p>Kernel/core packages were in the update set:
+<code>{{ uname_before_cmd.stdout }}</code> → <code>{{ uname_after_cmd.stdout }}</code>. Reboot was required.</p>
+{% endif %}
+<p><b>Result:</b> SUCCESS<br>
+{{ footer }}</p>
+[/code]

@@ -20,13 +20,16 @@
         sys_id: "{{ inc_dev_sys_id }}"
         other:
           work_notes: |
-            [AUTOMATED] Applying CVE-targeted package upgrade to dev canary nodes.
-
-            Strategy: dnf upgrade --cve (permanent fix); reboot only if needs-restarting requires it
-            Target hosts: rhel-dev-01, rhel-dev-02, rhel-dev-03
-            Triggered CVE: {{ triggered_cve | default('N/A') }}
-            Reboot expected: {{ reboot_required_for_fix | default('assessed at runtime') }}
-            AAP Workflow Job: {{ tower_workflow_job_id | default(awx_workflow_job_id | default('N/A')) }}
+            [code]
+            <h3>Applying package patch — DEV canary</h3>
+            <ul>
+              <li><b>Strategy:</b> dnf upgrade --cve (permanent fix); reboot only if <code>needs-restarting</code> requires it</li>
+              <li><b>Targets:</b> rhel-dev-01, rhel-dev-02, rhel-dev-03</li>
+              <li><b>CVE:</b> {{ triggered_cve | default('N/A') }}</li>
+              <li><b>Reboot expected:</b> {{ reboot_required_for_fix | default('assessed at runtime') }}</li>
+              <li><b>AAP Workflow Job:</b> {{ tower_workflow_job_id | default(awx_workflow_job_id | default('N/A')) }}</li>
+            </ul>
+            [/code]
       delegate_to: localhost
       become: false
       run_once: true
@@ -39,13 +42,16 @@
         sys_id: "{{ inc_prod_sys_id }}"
         other:
           work_notes: |
-            [AUTOMATED] Emergency CR {{ cr_number }} has been approved.
-            Applying CVE-targeted package upgrade to production nodes now.
-
-            Strategy: dnf upgrade --cve (permanent fix); reboot only if needs-restarting requires it
-            Target hosts: rhel-prod-01, rhel-prod-02, rhel-prod-03
-            Reboot expected: {{ reboot_required_for_fix | default('assessed at runtime') }}
-            AAP Workflow Job: {{ tower_workflow_job_id | default(awx_workflow_job_id | default('N/A')) }}
+            [code]
+            <h3>Applying package patch — PRODUCTION</h3>
+            <p>Emergency CR <b>{{ cr_number }}</b> approved. Applying identical canary remediation to prod.</p>
+            <ul>
+              <li><b>Strategy:</b> dnf upgrade --cve; reboot only if <code>needs-restarting</code> requires it</li>
+              <li><b>Targets:</b> rhel-prod-01, rhel-prod-02, rhel-prod-03</li>
+              <li><b>Reboot expected:</b> {{ reboot_required_for_fix | default('assessed at runtime') }}</li>
+              <li><b>AAP Workflow Job:</b> {{ tower_workflow_job_id | default(awx_workflow_job_id | default('N/A')) }}</li>
+            </ul>
+            [/code]
       delegate_to: localhost
       become: false
       run_once: true
@@ -201,60 +207,50 @@
           Services restarted: {{ services_need_restart.stdout_lines | default([]) | join(', ') | default('none') }}
           Strategy: CVE-targeted package upgrade
 
+    - name: Render formatted patch-success work note (dev)
+      ansible.builtin.set_fact:
+        snow_patch_note: "{{ lookup('template', 'templates/snow/patch_applied.j2') }}"
+      vars:
+        title: "Package patch applied — DEV canary"
+        footer: "Proceeding to raise emergency CR for production deployment."
+      run_once: true
+      when:
+        - cr_number is not defined
+        - inc_dev_sys_id is defined
+
     - name: Add work note — package patch successfully applied to dev canary
       servicenow.itsm.incident:
         sys_id: "{{ inc_dev_sys_id }}"
         other:
-          work_notes: |
-            [AUTOMATED] Package patch successfully applied to all dev canary nodes.
-
-            Strategy: dnf upgrade --cve (permanent package fix)
-            CVE: {{ triggered_cve | default('N/A') }}
-            PHP RPM: {{ php_before_cmd.stdout | default('n/a') }} → {{ php_after_cmd.stdout | default('n/a') }}
-            {% if package_upgrade_lines | default([]) | length > 0 %}
-            Packages:
-            {% for line in package_upgrade_lines %}
-              {{ line }}
-            {% endfor %}
-            {% endif %}
-            Reboot performed: {{ reboot_cmd_result is changed }}
-
-            {{ kernel_impact_note }}
-
-            Patch result: SUCCESS
-            Proceeding to raise emergency CR for production deployment.
+          work_notes: "{{ snow_patch_note }}"
       delegate_to: localhost
       become: false
       run_once: true
       when:
         - cr_number is not defined
         - inc_dev_sys_id is defined
+        - snow_patch_note is defined
+
+    - name: Render formatted patch-success work note (prod)
+      ansible.builtin.set_fact:
+        snow_patch_note: "{{ lookup('template', 'templates/snow/patch_applied.j2') }}"
+      vars:
+        title: "Package patch applied — PRODUCTION"
+        footer: "Running post-implementation checks now."
+      run_once: true
+      when:
+        - cr_number is defined
+        - inc_prod_sys_id is defined
 
     - name: Add work note — package patch successfully applied to production
       servicenow.itsm.incident:
         sys_id: "{{ inc_prod_sys_id }}"
         other:
-          work_notes: |
-            [AUTOMATED] Package patch successfully applied to all production nodes.
-
-            Strategy: dnf upgrade --cve (permanent package fix)
-            CVE: {{ triggered_cve | default('N/A') }}
-            PHP RPM: {{ php_before_cmd.stdout | default('n/a') }} → {{ php_after_cmd.stdout | default('n/a') }}
-            {% if package_upgrade_lines | default([]) | length > 0 %}
-            Packages:
-            {% for line in package_upgrade_lines %}
-              {{ line }}
-            {% endfor %}
-            {% endif %}
-            Reboot performed: {{ reboot_cmd_result is changed }}
-
-            {{ kernel_impact_note }}
-
-            Patch result: SUCCESS
-            Running post-implementation checks now.
+          work_notes: "{{ snow_patch_note }}"
       delegate_to: localhost
       become: false
       run_once: true
       when:
         - cr_number is defined
         - inc_prod_sys_id is defined
+        - snow_patch_note is defined

@@ -1,0 +1,16 @@
+[code]
+<h3>{{ title }}</h3>
+<ul>
+  <li><b>Kernel:</b> <code>{{ kernel_version | default('unknown') }}</code></li>
+  <li><b>Patch available:</b> {{ patch_available | default('unknown') }}</li>
+  <li><b>Reboot required for fix:</b> {{ reboot_required_for_fix | default(false) }}</li>
+  <li><b>Related CVEs:</b> {{ cve_list | default([]) | join(', ') | default('none') }}</li>
+  <li><b>SBOM baseline:</b> <code>{{ sbom_before_path | default('/tmp/sbom-before.json') }}</code></li>
+</ul>
+{% if package_upgrade_lines | default([]) | length > 0 %}
+<p><b>Exposed packages (installed → upgrade target):</b></p>
+<pre>{% for line in package_upgrade_lines %}{{ line }}
+{% endfor %}</pre>
+{% endif %}
+<p>{{ footer }}</p>
+[/code]

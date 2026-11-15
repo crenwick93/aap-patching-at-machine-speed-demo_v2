@@ -8,25 +8,24 @@
     - name: Build validation summary for incidents
       ansible.builtin.set_fact:
         validation_work_note: |
-          [AUTOMATED] Post-Implementation Review
-
-          All post-checks passed across patched hosts.
-          Strategy: {{ strategy_used | default('package_upgrade') }}
-          Services healthy: {{ services_healthy | default('yes') }}
-          Trading Service: UP
-          Kernel after: {{ kernel_after | default('see host reports') }}
-          PHP after: {{ php_after | default('see host reports') }}
-          Reboot performed: {{ reboot_performed | default('n/a') }}
-
-          SBOM Diff Summary:
-          - Packages added: {{ sbom_diff_summary.added | default([]) | length }}
-          - Packages removed: {{ sbom_diff_summary.removed | default([]) | length }}
-          - Packages changed: {{ sbom_diff_summary.changed | default({}) | length }}
-
-          Permanent package upgrade applied — Insights will clear the advisory on next
-          evaluation after the updated RPM set is reported (no manual CVE status patch).
-
-          {{ canary_evidence | default(postcheck_report | default('')) }}
+          [code]
+          <h3>Post-Implementation Review</h3>
+          <p>All post-checks passed across patched hosts.</p>
+          <ul>
+            <li><b>Strategy:</b> {{ strategy_used | default('package_upgrade') }}</li>
+            <li><b>Services healthy:</b> {{ services_healthy | default('yes') }}</li>
+            <li><b>Trading Service:</b> UP</li>
+            <li><b>PHP after:</b> <code>{{ php_after | default('see host reports') }}</code></li>
+            <li><b>Reboot performed:</b> {{ reboot_performed | default('n/a') }}</li>
+            <li><b>Kernel impact:</b> {{ kernel_impact_note | default('KERNEL UNCHANGED') | e }}</li>
+          </ul>
+          <p><b>SBOM diff:</b>
+          +{{ sbom_diff_summary.added | default([]) | length }} /
+          −{{ sbom_diff_summary.removed | default([]) | length }} /
+          ~{{ sbom_diff_summary.changed | default({}) | length }}</p>
+          <p>Permanent package upgrade applied — Insights clears on next evaluation
+          after the updated RPM set is reported (no manual CVE status API).</p>
+          [/code]
 
     - name: Update Dev Incident with post-check results
       servicenow.itsm.incident:
@@ -67,29 +66,25 @@
     - name: Build review notes
       ansible.builtin.set_fact:
         review_notes: |
-          Production patching complete — ready for human review.
-
-          Strategy: {{ strategy_used | default('package_upgrade') }}
-          CVEs patched: {{ cves_patched | default([]) | join(', ') }}
-          Services healthy: {{ services_healthy | default('unknown') }}
-          Trading Service: UP (all environments)
-          Kernel after: {{ kernel_after | default('see host reports') }}
-          PHP after: {{ php_after | default('see host reports') }}
-          Reboot performed: {{ reboot_performed | default('n/a') }}
-
-          SBOM Diff Summary:
-          - Packages added: {{ sbom_diff_summary.added | default([]) | length }}
-          - Packages removed: {{ sbom_diff_summary.removed | default([]) | length }}
-          - Packages changed: {{ sbom_diff_summary.changed | default({}) | length }}
-
-          Insights: package set updated on hosts — scanner path clears on next evaluation
-          (no manual CVE status API update in this full-patch workflow).
-          Dev Incident: resolved
-          Prod Incident: resolved
-          CMDB CIs: updated
-          Follow-up CR: none (this remediation is the permanent fix)
-
-          {{ canary_evidence | default('') }}
+          [code]
+          <h3>Production patching complete — ready for human review</h3>
+          <ul>
+            <li><b>Strategy:</b> {{ strategy_used | default('package_upgrade') }}</li>
+            <li><b>CVEs patched:</b> {{ cves_patched | default([]) | join(', ') }}</li>
+            <li><b>Services healthy:</b> {{ services_healthy | default('unknown') }}</li>
+            <li><b>Trading Service:</b> UP (all environments)</li>
+            <li><b>PHP after:</b> <code>{{ php_after | default('see host reports') }}</code></li>
+            <li><b>Reboot performed:</b> {{ reboot_performed | default('n/a') }}</li>
+            <li><b>Kernel impact:</b> {{ kernel_impact_note | default('KERNEL UNCHANGED') | e }}</li>
+            <li><b>SBOM:</b> +{{ sbom_diff_summary.added | default([]) | length }} /
+              −{{ sbom_diff_summary.removed | default([]) | length }} /
+              ~{{ sbom_diff_summary.changed | default({}) | length }}</li>
+          </ul>
+          <p>Insights: package set updated — scanner clears on next evaluation
+          (no manual CVE status API in this full-patch workflow).<br>
+          Dev + Prod incidents resolved. CMDB CIs updated.
+          Follow-up CR: <b>none</b> (this remediation is the permanent fix).</p>
+          [/code]
 
     - name: Move CR to Review
       servicenow.itsm.change_request:
