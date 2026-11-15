@@ -16,7 +16,7 @@
       action:
         run_workflow_template:
           name: "Trading Service: CVE Full Patch Response"
-          organization: Default
+          organization: Security
           job_args:
             extra_vars:
               affected_host: "{{ event.payload.payload.context.display_name }}"
@@ -48,7 +48,7 @@
       action:
         run_job_template:
           name: "Bridge CR Approval Full Patch"
-          organization: Default
+          organization: Security
           job_args:
             extra_vars:
               cr_number: "{{ event.number }}"
