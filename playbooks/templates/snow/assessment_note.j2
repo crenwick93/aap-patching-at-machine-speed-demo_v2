@@ -9,8 +9,12 @@
 </ul>
 {% if package_upgrade_lines | default([]) | length > 0 %}
 <p><b>Exposed packages (installed → upgrade target):</b></p>
-<pre>{% for line in package_upgrade_lines %}{{ line }}
-{% endfor %}</pre>
+<ul>
+{% for line in package_upgrade_lines %}
+{% set parts = line.split('→') %}
+  <li><code>{{ parts[0] | trim }}</code> → <code>{{ parts[1] | default('') | trim }}</code></li>
+{% endfor %}
+</ul>
 {% endif %}
 <p>{{ footer }}</p>
 [/code]

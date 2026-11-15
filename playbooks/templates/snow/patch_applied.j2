@@ -6,8 +6,12 @@
 <b>Reboot performed:</b> {{ reboot_cmd_result is changed }}</p>
 {% if package_upgrade_lines | default([]) | length > 0 %}
 <p><b>Packages upgraded (installed → fixed):</b></p>
-<pre>{% for line in package_upgrade_lines %}{{ line }}
-{% endfor %}</pre>
+<ul>
+{% for line in package_upgrade_lines %}
+{% set parts = line.split('→') %}
+  <li><code>{{ parts[0] | trim }}</code> → <code>{{ parts[1] | default('') | trim }}</code></li>
+{% endfor %}
+</ul>
 {% endif %}
 <p><b>{% if uname_before_cmd.stdout == uname_after_cmd.stdout %}KERNEL UNCHANGED{% else %}KERNEL CHANGED{% endif %}</b>
 — <code>{{ uname_after_cmd.stdout }}</code></p>

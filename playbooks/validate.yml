@@ -161,14 +161,30 @@
         sbom_diff: "{{ sbom_diff_raw.stdout | from_json }}"
       when: sbom_before_stat.stat.exists
 
+    - name: Init SBOM upgrade lines
+      ansible.builtin.set_fact:
+        sbom_upgrade_lines: []
+
     - name: Build SBOM upgrade lines (before → after)
       ansible.builtin.set_fact:
-        sbom_upgrade_detail: |
-          {% for item in ((sbom_diff | default({})).changed | default({}) | dict2items) %}
-          {{ item.key }}: {{ item.value.before }}  →  {{ item.value.after }}
-          {% else %}
-          (no package version changes recorded in SBOM diff)
-          {% endfor %}
+        sbom_upgrade_lines: >-
+          {{
+            sbom_upgrade_lines
+            + [item.key ~ ': ' ~ item.value.before ~ '  →  ' ~ item.value.after]
+          }}
+      loop: "{{ ((sbom_diff | default({})).changed | default({}) | dict2items) }}"
+      loop_control:
+        label: "{{ item.key }}"
+      when: (sbom_diff | default({})).changed is defined
+
+    - name: Build SBOM upgrade detail text
+      ansible.builtin.set_fact:
+        sbom_upgrade_detail: >-
+          {{
+            sbom_upgrade_lines | join('\n')
+            if (sbom_upgrade_lines | length > 0)
+            else '(no package version changes recorded in SBOM diff)'
+          }}
 
     - name: Set per-host validation facts
       ansible.builtin.set_fact:
@@ -212,6 +228,7 @@
             removed: "{{ (sbom_diff | default({})).removed | default([]) | length }}"
             changed: "{{ (sbom_diff | default({})).changed | default({}) | length }}"
             changed_packages: "{{ ((sbom_diff | default({})).changed | default({})).keys() | list }}"
+            upgrade_lines: "{{ sbom_upgrade_lines | default([]) }}"
             upgrade_detail: "{{ sbom_upgrade_detail }}"
           result: PASS
           timestamp: "{{ ansible_date_time.iso8601 }}"

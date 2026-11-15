@@ -12,8 +12,12 @@
 </ul>
 {% if package_upgrade_lines | default([]) | length > 0 %}
 <p><b>Planned exposure (installed → fix target):</b></p>
-<pre>{% for line in package_upgrade_lines %}{{ line }}
-{% endfor %}</pre>
+<ul>
+{% for line in package_upgrade_lines %}
+{% set parts = line.split('→') %}
+  <li><code>{{ parts[0] | trim }}</code> → <code>{{ parts[1] | default('') | trim }}</code></li>
+{% endfor %}
+</ul>
 {% endif %}
 <h4>Per-host results</h4>
 {% for h in ansible_play_hosts %}
@@ -29,7 +33,17 @@ SBOM: <code>{{ hostvars[h].host_validation.sbom.before_file | default('/tmp/sbom
 (+{{ hostvars[h].host_validation.sbom.added | default(0) }}
 /−{{ hostvars[h].host_validation.sbom.removed | default(0) }}
 /~{{ hostvars[h].host_validation.sbom.changed | default(0) }})</p>
-<pre>{{ hostvars[h].host_validation.sbom.upgrade_detail | default('(none)') }}</pre>
+{% set upgrade_lines = hostvars[h].host_validation.sbom.upgrade_lines | default([]) %}
+{% if upgrade_lines | length > 0 %}
+<ul>
+{% for line in upgrade_lines %}
+{% set parts = line.split('→') %}
+  <li><code>{{ parts[0] | trim }}</code> → <code>{{ parts[1] | default('') | trim }}</code></li>
+{% endfor %}
+</ul>
+{% else %}
+<p><i>(no package version changes recorded in SBOM diff)</i></p>
+{% endif %}
 {% endfor %}
 <p>All canary hosts passed. Critical services (sshd, chronyd, httpd) active.
 Trading Service UP on every canary node. No pending reboot.
