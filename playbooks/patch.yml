@@ -24,7 +24,7 @@
             <h3>Applying package patch — DEV canary</h3>
             <ul>
               <li><b>Strategy:</b> dnf upgrade --cve (permanent fix); reboot only if <code>needs-restarting</code> requires it</li>
-              <li><b>Targets:</b> rhel-dev-01, rhel-dev-02, rhel-dev-03</li>
+              <li><b>Targets:</b> rhel-dev-01/02/03.trading-demo.chrislab.dev</li>
               <li><b>CVE:</b> {{ triggered_cve | default('N/A') }}</li>
               <li><b>Reboot expected:</b> {{ reboot_required_for_fix | default('assessed at runtime') }}</li>
               <li><b>AAP Workflow Job:</b> {{ tower_workflow_job_id | default(awx_workflow_job_id | default('N/A')) }}</li>
@@ -48,7 +48,7 @@
             (same package upgrade path validated on DEV canary).</p>
             <ul>
               <li><b>Strategy:</b> dnf upgrade --cve; reboot only if <code>needs-restarting</code> requires it</li>
-              <li><b>Targets:</b> rhel-prod-01, rhel-prod-02, rhel-prod-03</li>
+              <li><b>Targets:</b> rhel-prod-01/02/03.trading-demo.chrislab.dev</li>
               <li><b>Reboot expected:</b> {{ reboot_required_for_fix | default('assessed at runtime') }}</li>
               <li><b>AAP Workflow Job:</b> {{ tower_workflow_job_id | default(awx_workflow_job_id | default('N/A')) }}</li>
             </ul>

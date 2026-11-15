@@ -118,6 +118,8 @@ controller_inventory_sources:
         - eu-west-1
       filters:
         "tag:demo": patching-full
+      # EC2 Name tags are FQDNs (rhel-*.trading-demo.chrislab.dev) so AAP,
+      # Insights, and ServiceNow Trading Service CIs all show the same names.
       hostnames:
         - tag:Name
       keyed_groups:

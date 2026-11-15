@@ -69,7 +69,7 @@
             the paused workflow to execute the following steps:
 
             1. Apply CVE-targeted package upgrades to production nodes
-               (rhel-prod-01, rhel-prod-02, rhel-prod-03).
+               (rhel-prod-01/02/03.trading-demo.chrislab.dev).
             2. Restart affected services if needed (including httpd / Trading Service).
             3. Reboot only if needs-restarting reports a core-library requirement.
                For this change, reboot required: {{ reboot_required_for_fix | default(false) }}.

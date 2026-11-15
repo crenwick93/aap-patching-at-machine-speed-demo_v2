@@ -171,7 +171,7 @@ USERDATA
     --security-group-ids "$SG" \
     --key-name "$KEY_NAME" \
     --user-data "file://${UD_TMPFILE}" \
-    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${name}},{Key=env,Value=${env}},{Key=demo,Value=patching-full}]" \
+    --tag-specifications "ResourceType=instance,Tags=[{Key=Name,Value=${fqdn}},{Key=env,Value=${env}},{Key=demo,Value=patching-full}]" \
     --query "Instances[0].InstanceId" \
     --output text)
 
@@ -409,12 +409,12 @@ echo ""
 # --- Step 8: Update /etc/hosts for demo SSH convenience ---
 echo "-- Step 8/8: Updating /etc/hosts for demo SSH shortcuts --"
 
-DEMO_HOSTS=("rhel-dev-01" "rhel-prod-01")
+DEMO_HOSTS=("rhel-dev-01.${DOMAIN}" "rhel-prod-01.${DOMAIN}")
 HOSTS_UPDATED=0
 
 DEMO_IPS=$(aws ec2 describe-instances \
   --region "$REGION" \
-  --filters "Name=tag:Name,Values=rhel-dev-01,rhel-prod-01" "Name=instance-state-name,Values=running" \
+  --filters "Name=tag:Name,Values=rhel-dev-01.${DOMAIN},rhel-prod-01.${DOMAIN}" "Name=instance-state-name,Values=running" \
   --query 'Reservations[].Instances[].{Name:Tags[?Key==`Name`].Value|[0],IP:PublicIpAddress}' \
   --output json 2>/dev/null)
 
@@ -430,8 +430,8 @@ for i in json.load(sys.stdin):
         print(i['IP']); break
 " 2>/dev/null)
   if [[ -n "$dip" ]]; then
-    echo "${dip} ${dh}.trading-demo.chrislab.dev" | sudo tee -a /etc/hosts > /dev/null
-    echo "  [OK] ${dh}.trading-demo.chrislab.dev -> ${dip}"
+    echo "${dip} ${dh}" | sudo tee -a /etc/hosts > /dev/null
+    echo "  [OK] ${dh} -> ${dip}"
     HOSTS_UPDATED=$((HOSTS_UPDATED + 1))
   else
     echo "  [SKIP] Could not resolve IP for ${dh}"
