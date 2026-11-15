@@ -53,10 +53,16 @@
         - cr_number is defined
         - inc_prod_sys_id is defined
 
-    - name: Capture pre-patch kernel version
+    - name: Capture pre-patch package versions
       ansible.builtin.command: uname -r
       register: uname_before_cmd
       changed_when: false
+
+    - name: Capture pre-patch PHP RPM (if present)
+      ansible.builtin.command: rpm -q php
+      register: php_before_cmd
+      changed_when: false
+      failed_when: false
 
     - name: Check for updates matching triggered CVE
       ansible.builtin.command: >
@@ -118,10 +124,16 @@
       when: (reboot_needed_cmd.rc | default(0)) != 0 or (force_reboot | bool)
       register: reboot_cmd_result
 
-    - name: Capture post-patch kernel version
+    - name: Capture post-patch package versions
       ansible.builtin.command: uname -r
       register: uname_after_cmd
       changed_when: false
+
+    - name: Capture post-patch PHP RPM (if present)
+      ansible.builtin.command: rpm -q php
+      register: php_after_cmd
+      changed_when: false
+      failed_when: false
 
     - name: Confirm no pending reboot remains
       ansible.builtin.command: needs-restarting -r
@@ -144,8 +156,11 @@
           patch_result: success
           strategy_used: package_upgrade
           cves_patched: "{{ [triggered_cve] if (triggered_cve is defined and triggered_cve | length > 0) else (cve_list | default([])) }}"
+          php_before: "{{ php_before_cmd.stdout | default('') }}"
+          php_after: "{{ php_after_cmd.stdout | default('') }}"
           kernel_before: "{{ uname_before_cmd.stdout }}"
           kernel_after: "{{ uname_after_cmd.stdout }}"
+          kernel_changed: "{{ uname_before_cmd.stdout != uname_after_cmd.stdout }}"
           reboot_required: "{{ (reboot_needed_cmd.rc | default(0)) != 0 }}"
           reboot_performed: "{{ reboot_cmd_result is changed }}"
           services_restarted: "{{ services_need_restart.stdout_lines | default([]) }}"
@@ -157,12 +172,22 @@
         msg: |
           === Package Patch Applied ===
           Host: {{ inventory_hostname }}
-          Kernel before: {{ uname_before_cmd.stdout }}
-          Kernel after:  {{ uname_after_cmd.stdout }}
+          CVE: {{ triggered_cve | default('N/A') }}
+          Packages upgraded (from assessment plan):
+          {% for line in package_upgrade_lines | default([]) %}
+          {{ line }}
+          {% else %}
+          (see dnf history / SBOM diff)
+          {% endfor %}
+          PHP RPM: {{ php_before_cmd.stdout | default('n/a') }} → {{ php_after_cmd.stdout | default('n/a') }}
           Reboot required: {{ (reboot_needed_cmd.rc | default(0)) != 0 }}
           Reboot performed: {{ reboot_cmd_result is changed }}
+          Kernel unchanged: {{ uname_before_cmd.stdout }}
+          {% if uname_before_cmd.stdout != uname_after_cmd.stdout %}
+          Kernel changed: {{ uname_before_cmd.stdout }} → {{ uname_after_cmd.stdout }}
+          {% endif %}
           Services restarted: {{ services_need_restart.stdout_lines | default([]) | join(', ') | default('none') }}
-          Strategy: CVE-targeted package upgrade (reboot only if required)
+          Strategy: CVE-targeted package upgrade (not a kernel update unless those packages are in the CVE set)
 
     - name: Add work note — package patch successfully applied to dev canary
       servicenow.itsm.incident:
@@ -171,9 +196,17 @@
           work_notes: |
             [AUTOMATED] Package patch successfully applied to all dev canary nodes.
 
-            Strategy: dnf upgrade --cve (permanent fix)
-            Kernel: {{ uname_before_cmd.stdout }} → {{ uname_after_cmd.stdout }}
+            Strategy: dnf upgrade --cve (permanent package fix — not a kernel upgrade for this CVE)
+            CVE: {{ triggered_cve | default('N/A') }}
+            PHP RPM: {{ php_before_cmd.stdout | default('n/a') }} → {{ php_after_cmd.stdout | default('n/a') }}
+            {% if package_upgrade_lines | default([]) | length > 0 %}
+            Packages:
+            {% for line in package_upgrade_lines %}
+              {{ line }}
+            {% endfor %}
+            {% endif %}
             Reboot performed: {{ reboot_cmd_result is changed }}
+            Kernel: unchanged ({{ uname_after_cmd.stdout }})
             Patch result: SUCCESS
 
             Proceeding to raise emergency CR for production deployment.
@@ -191,9 +224,17 @@
           work_notes: |
             [AUTOMATED] Package patch successfully applied to all production nodes.
 
-            Strategy: dnf upgrade --cve (permanent fix)
-            Kernel: {{ uname_before_cmd.stdout }} → {{ uname_after_cmd.stdout }}
+            Strategy: dnf upgrade --cve (permanent package fix — not a kernel upgrade for this CVE)
+            CVE: {{ triggered_cve | default('N/A') }}
+            PHP RPM: {{ php_before_cmd.stdout | default('n/a') }} → {{ php_after_cmd.stdout | default('n/a') }}
+            {% if package_upgrade_lines | default([]) | length > 0 %}
+            Packages:
+            {% for line in package_upgrade_lines %}
+              {{ line }}
+            {% endfor %}
+            {% endif %}
             Reboot performed: {{ reboot_cmd_result is changed }}
+            Kernel: unchanged ({{ uname_after_cmd.stdout }})
             Patch result: SUCCESS
 
             Running post-implementation checks now.
