@@ -62,7 +62,17 @@ install_one() {
     "${SSH_USER}@${ip}:/tmp/" >/dev/null
   ssh $SSH_OPTS -i "$SSH_KEY" "${SSH_USER}@${ip}" bash -s <<'EOS'
 set -euo pipefail
-sudo dnf install -y httpd php 2>&1 | tail -3
+# Install httpd only — do NOT `dnf install php` here or it upgrades past the
+# vulnerable demo NVR seeded by reset-demo.sh.
+sudo dnf install -y httpd 2>&1 | tail -3
+# Keep / ensure vulnerable PHP for the demo CVE story
+if ! rpm -q php >/dev/null 2>&1; then
+  sudo dnf install -y php php-cli php-common 2>&1 | tail -3
+fi
+if ! rpm -q php | grep -q '8.0.30-6.el9_8'; then
+  sudo dnf downgrade -y php-8.0.30-6.el9_8 php-cli-8.0.30-6.el9_8 \
+    php-common-8.0.30-6.el9_8 php-fpm-8.0.30-6.el9_8 2>&1 | tail -8 || true
+fi
 sudo mkdir -p /var/www/html
 sudo install -m 0644 /tmp/index.php /tmp/health.php /var/www/html/
 rm -f /tmp/index.php /tmp/health.php
