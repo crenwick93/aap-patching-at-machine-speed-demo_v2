@@ -15,6 +15,7 @@
           Services healthy: {{ services_healthy | default('yes') }}
           Trading Service: UP
           Kernel after: {{ kernel_after | default('see host reports') }}
+          PHP after: {{ php_after | default('see host reports') }}
           Reboot performed: {{ reboot_performed | default('n/a') }}
 
           SBOM Diff Summary:
@@ -22,7 +23,10 @@
           - Packages removed: {{ sbom_diff_summary.removed | default([]) | length }}
           - Packages changed: {{ sbom_diff_summary.changed | default({}) | length }}
 
-          {{ postcheck_report | default('') }}
+          Permanent package upgrade applied — Insights will clear the advisory on next
+          evaluation after the updated RPM set is reported (no manual CVE status patch).
+
+          {{ canary_evidence | default(postcheck_report | default('')) }}
 
     - name: Update Dev Incident with post-check results
       servicenow.itsm.incident:
@@ -60,90 +64,6 @@
           no follow-up CR required. Reboot performed: {{ reboot_performed | default('n/a') }}.
       when: inc_prod_sys_id is defined and inc_prod_sys_id | length > 0
 
-    - name: Get Red Hat SSO access token (Lightspeed service account)
-      ansible.builtin.uri:
-        url: https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token
-        method: POST
-        body_format: form-urlencoded
-        body:
-          grant_type: client_credentials
-          client_id: "{{ lookup('env', 'LIGHTSPEED_CLIENT_ID') }}"
-          client_secret: "{{ lookup('env', 'LIGHTSPEED_CLIENT_SECRET') }}"
-        return_content: true
-        status_code: 200
-      register: sso_token
-      no_log: true
-      when:
-        - lookup('env', 'LIGHTSPEED_CLIENT_ID') | length > 0
-        - lookup('env', 'LIGHTSPEED_CLIENT_SECRET') | length > 0
-
-    - name: Look up Insights inventory UUIDs for demo systems
-      ansible.builtin.uri:
-        url: "https://console.redhat.com/api/inventory/v1/hosts?display_name=trading-demo&per_page=50"
-        method: GET
-        headers:
-          Authorization: "Bearer {{ sso_token.json.access_token }}"
-        return_content: true
-      register: insights_hosts
-      when: sso_token is succeeded
-
-    - name: Build list of Insights inventory IDs
-      ansible.builtin.set_fact:
-        insights_inventory_ids: "{{ insights_hosts.json.results | map(attribute='id') | list }}"
-      when: insights_hosts is succeeded
-
-    - name: Mark CVE as Resolved in Red Hat Insights
-      ansible.builtin.uri:
-        url: https://console.redhat.com/api/vulnerability/v1/status
-        method: PATCH
-        headers:
-          Authorization: "Bearer {{ sso_token.json.access_token }}"
-          Content-Type: application/vnd.api+json
-        body_format: json
-        body:
-          cve: "{{ triggered_cve | default('CVE-2026-109618') }}"
-          inventory_id: "{{ insights_inventory_ids }}"
-          status_id: 4
-          status_text: >-
-            Permanently remediated via CVE-targeted package upgrade — applied by AAP automation.
-            Emergency CR {{ cr_number | default('N/A') }}.
-            Reboot performed: {{ reboot_performed | default('n/a') }}.
-        status_code: 200
-      register: insights_status_result
-      when:
-        - sso_token is succeeded
-        - insights_inventory_ids | default([]) | length > 0
-
-    - name: Add Insights status work note to Dev Incident
-      servicenow.itsm.incident:
-        sys_id: "{{ inc_dev_sys_id }}"
-        other:
-          work_notes: |
-            [AUTOMATED] Red Hat Insights CVE status updated.
-
-            {{ triggered_cve | default('CVE-2026-109618') }} marked as "Resolved"
-            across {{ insights_inventory_ids | default([]) | length }} systems in Red Hat Insights.
-
-            Permanent package upgrade completed — no follow-up CR required.
-      when:
-        - inc_dev_sys_id is defined and inc_dev_sys_id | length > 0
-        - insights_status_result is succeeded
-
-    - name: Add Insights status work note to Prod Incident
-      servicenow.itsm.incident:
-        sys_id: "{{ inc_prod_sys_id }}"
-        other:
-          work_notes: |
-            [AUTOMATED] Red Hat Insights CVE status updated.
-
-            {{ triggered_cve | default('CVE-2026-109618') }} marked as "Resolved"
-            across {{ insights_inventory_ids | default([]) | length }} systems in Red Hat Insights.
-
-            Permanent package upgrade completed — no follow-up CR required.
-      when:
-        - inc_prod_sys_id is defined and inc_prod_sys_id | length > 0
-        - insights_status_result is succeeded
-
     - name: Build review notes
       ansible.builtin.set_fact:
         review_notes: |
@@ -154,6 +74,7 @@
           Services healthy: {{ services_healthy | default('unknown') }}
           Trading Service: UP (all environments)
           Kernel after: {{ kernel_after | default('see host reports') }}
+          PHP after: {{ php_after | default('see host reports') }}
           Reboot performed: {{ reboot_performed | default('n/a') }}
 
           SBOM Diff Summary:
@@ -161,11 +82,14 @@
           - Packages removed: {{ sbom_diff_summary.removed | default([]) | length }}
           - Packages changed: {{ sbom_diff_summary.changed | default({}) | length }}
 
-          Red Hat Insights: CVE marked as "Resolved" on {{ insights_inventory_ids | default([]) | length }} systems
+          Insights: package set updated on hosts — scanner path clears on next evaluation
+          (no manual CVE status API update in this full-patch workflow).
           Dev Incident: resolved
           Prod Incident: resolved
           CMDB CIs: updated
           Follow-up CR: none (this remediation is the permanent fix)
+
+          {{ canary_evidence | default('') }}
 
     - name: Move CR to Review
       servicenow.itsm.change_request:
@@ -183,7 +107,6 @@
           Prod Incident {{ inc_prod_number | default('?') }}: resolved
           Emergency CR {{ cr_number | default('?') }}: moved to Review
           Follow-up CR: none (permanent fix applied)
-          Insights: CVE marked as Resolved on {{ insights_inventory_ids | default([]) | length }} systems
 
     - name: Publish PIR data
       ansible.builtin.set_stats:

@@ -21,7 +21,7 @@ The current demo story uses **PHP RCE CVE-2026-109618** (RHSA-2026:87151) — a 
    - **Pause for human approval** in ServiceNow
    - Apply the same upgrade to production (after CR approval)
    - Post-checks, CMDB CI updates, SBOM diff
-   - Post-Implementation Review: resolve incidents, mark CVE as Resolved in Insights
+   - Post-Implementation Review: resolve incidents and move the CR to Review (package upgrade is the permanent fix; Insights clears on rescan)
 
 ## Architecture
 

@@ -205,7 +205,7 @@ controller_templates:
       - "ServiceNow PDI Full Patch"
 
   - name: "Post-Implementation Review Full Patch"
-    description: "CR to Review, update Insights CVE status as Resolved"
+    description: "Resolve incidents, move CR to Review (permanent package fix — no Insights status API)"
     organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
@@ -214,7 +214,6 @@ controller_templates:
     ask_variables_on_launch: true
     credentials:
       - "ServiceNow PDI Full Patch"
-      - "Lightspeed API Full Patch"
 
   - name: "Bridge CR Approval Full Patch"
     description: "Relay ServiceNow CR approval to the paused AAP workflow node"

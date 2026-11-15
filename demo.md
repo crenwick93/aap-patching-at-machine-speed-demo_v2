@@ -195,7 +195,7 @@ sudo needs-restarting -r; echo "exit=$?"
 ### 5.2 — Insights resolution
 
 - Navigate to **Red Hat Insights — Vulnerabilities** and refresh
-- "CVE status updated to **Resolved** via the Insights API in PIR — stops duplicate events, gives SOC an accurate picture."
+- "Because we changed the RPMs, Insights clears this on the next evaluation after check-in — no manual status API needed for a full package patch."
 
 ### 5.3 — The full audit trail
 

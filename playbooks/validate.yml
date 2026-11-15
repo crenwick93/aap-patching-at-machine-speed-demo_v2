@@ -7,12 +7,20 @@
   vars:
     sbom_before: "{{ sbom_before_path | default('/tmp/sbom-before.json') }}"
     sbom_after: "{{ sbom_after_path | default('/tmp/sbom-after.json') }}"
+    app_port: "{{ trading_service_port | default(80) }}"
+    critical_services: "{{ precheck_critical_services | default(['sshd', 'chronyd', 'httpd']) }}"
 
   tasks:
     - name: Verify kernel is running
       ansible.builtin.command: uname -r
       register: running_kernel_cmd
       changed_when: false
+
+    - name: Capture PHP package version
+      ansible.builtin.command: rpm -q php
+      register: php_rpm_cmd
+      changed_when: false
+      failed_when: false
 
     - name: Confirm no pending reboot after patching
       ansible.builtin.command: needs-restarting -r
@@ -38,7 +46,6 @@
     - name: Assert triggered CVE has no remaining package updates
       ansible.builtin.assert:
         that:
-          # dnf check-update returns 0 when nothing to do / no matching updates
           - (remaining_cve_check.rc | default(0)) == 0
         fail_msg: "{{ triggered_cve }} still has outstanding package updates on {{ inventory_hostname }}"
         success_msg: "{{ triggered_cve }} has no outstanding package updates on {{ inventory_hostname }}"
@@ -51,7 +58,7 @@
       ansible.builtin.systemd:
         name: "{{ item }}"
       register: post_service_status
-      loop: "{{ critical_services | default(['sshd', 'chronyd']) }}"
+      loop: "{{ critical_services }}"
 
     - name: Assert services are healthy post-patch
       ansible.builtin.assert:
@@ -63,18 +70,37 @@
       loop_control:
         label: "{{ item.item }}"
 
-    - name: Simulate Trading Service service health check
-      ansible.builtin.shell: |
-        curl -sf --max-time 5 http://localhost:{{ trading_service_port | default('8080') }}/health 2>/dev/null && echo "UP" || echo "UP"
-      register: trading_service_check
-      changed_when: false
+    - name: Query Trading Service /health endpoint
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_port }}/health"
+        method: GET
+        return_content: true
+        status_code: 200
+        timeout: 5
+      register: trading_health
+      failed_when: false
 
-    - name: Assert Trading Service service is responding
+    - name: Query Trading Service home page
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ app_port }}/"
+        method: GET
+        return_content: true
+        status_code: 200
+        timeout: 5
+      register: trading_home
+      failed_when: false
+
+    - name: Assert Trading Service is healthy
       ansible.builtin.assert:
         that:
-          - trading_service_check.stdout == "UP"
-        fail_msg: "Trading Service service is DOWN on {{ inventory_hostname }}"
-        success_msg: "Trading Service service is healthy on {{ inventory_hostname }}"
+          - trading_health.status | default(0) == 200
+          - (trading_health.json.status | default('')) == 'UP'
+            or ('"status":"UP"' in (trading_health.content | default('')))
+            or ('UP' in (trading_health.content | default('')))
+        fail_msg: >-
+          Trading Service health check FAILED on {{ inventory_hostname }}
+          (HTTP {{ trading_health.status | default('n/a') }})
+        success_msg: "Trading Service is UP on {{ inventory_hostname }}"
 
     - name: Check if syft is available
       ansible.builtin.command: syft version
@@ -135,24 +161,67 @@
         sbom_diff: "{{ sbom_diff_raw.stdout | from_json }}"
       when: sbom_before_stat.stat.exists
 
+    - name: Set per-host validation facts
+      ansible.builtin.set_fact:
+        host_validation:
+          host: "{{ inventory_hostname }}"
+          fqdn: "{{ ansible_fqdn | default(inventory_hostname) }}"
+          kernel: "{{ running_kernel_cmd.stdout }}"
+          php_rpm: "{{ php_rpm_cmd.stdout | default('php not installed') }}"
+          pending_reboot: false
+          reboot_performed: "{{ reboot_performed | default(false) }}"
+          services: >-
+            {{
+              dict(
+                post_service_status.results
+                | map(attribute='item')
+                | list
+                | zip(
+                    post_service_status.results
+                    | map(attribute='status')
+                    | map(attribute='ActiveState')
+                    | list
+                  )
+              )
+            }}
+          trading_service:
+            health_http: "{{ trading_health.status | default('n/a') }}"
+            health_body: "{{ trading_health.json | default(trading_health.content | default('')) }}"
+            home_http: "{{ trading_home.status | default('n/a') }}"
+            status: UP
+          cve_cleared: >-
+            {{
+              (triggered_cve is not defined)
+              or (triggered_cve | length == 0)
+              or ((remaining_cve_check.rc | default(0)) == 0)
+            }}
+          triggered_cve: "{{ triggered_cve | default('N/A') }}"
+          sbom:
+            added: "{{ sbom_diff.added | default([]) | length }}"
+            removed: "{{ sbom_diff.removed | default([]) | length }}"
+            changed: "{{ sbom_diff.changed | default({}) | length }}"
+            changed_packages: "{{ (sbom_diff.changed | default({})).keys() | list }}"
+          result: PASS
+          timestamp: "{{ ansible_date_time.iso8601 }}"
+
     - name: Build post-check report
       ansible.builtin.set_fact:
         postcheck_report: |
           === Post-check Report (Package Patch) ===
-          Host: {{ inventory_hostname }}
+          Host: {{ inventory_hostname }} ({{ ansible_fqdn | default(inventory_hostname) }})
           Timestamp: {{ ansible_date_time.iso8601 }}
+          Result: PASS
           Kernel: {{ running_kernel_cmd.stdout }}
+          PHP RPM: {{ php_rpm_cmd.stdout | default('n/a') }}
           Pending reboot: no
-          Reboot was required: {{ reboot_required | default(reboot_required_for_fix | default('n/a')) }}
           Reboot performed: {{ reboot_performed | default('n/a') }}
           Strategy: {{ strategy_used | default('package_upgrade') }}
-          Trading Service service: UP
-          Critical services: all healthy
-          SBOM packages before: {{ sbom_diff.total_before | default('N/A') }}
-          SBOM packages after: {{ sbom_diff.total_after | default('N/A') }}
-          RPMs added: {{ sbom_diff.added | default([]) | length }}
-          RPMs removed: {{ sbom_diff.removed | default([]) | length }}
-          RPMs changed: {{ sbom_diff.changed | default({}) | length }}
+          Triggered CVE cleared: {{ host_validation.cve_cleared }}
+          Critical services: {{ host_validation.services }}
+          Trading Service /health: HTTP {{ trading_health.status | default('n/a') }} — UP
+          Trading Service /: HTTP {{ trading_home.status | default('n/a') }}
+          SBOM: +{{ sbom_diff.added | default([]) | length }} / -{{ sbom_diff.removed | default([]) | length }} / ~{{ sbom_diff.changed | default({}) | length }}
+          Changed RPMs: {{ (sbom_diff.changed | default({})).keys() | list | join(', ') | default('none') }}
 
     - name: Display post-check report
       ansible.builtin.debug:
@@ -195,60 +264,70 @@
       async: 120
       poll: 0
 
-    - name: Add work note — dev canary post-checks passed
+    - name: Aggregate canary evidence across all hosts in this play
+      ansible.builtin.set_fact:
+        canary_evidence: |
+          CANARY VALIDATION — PASSED
+          Recommendation: SAFE TO DEPLOY TO PRODUCTION
+
+          Scope: {{ ansible_play_hosts | length }} host(s) in this stage
+          Triggered CVE: {{ triggered_cve | default('N/A') }}
+          Advisory: {{ advisory_id | default('N/A') }}
+          Strategy: {{ strategy_used | default('package_upgrade') }}
+          Reboot required (assessed): {{ reboot_required_for_fix | default('n/a') }}
+          Reboot performed: {{ reboot_performed | default('n/a') }}
+          Validation time: {{ ansible_date_time.iso8601 }}
+
+          Per-host results:
+          {% for h in ansible_play_hosts %}
+          --- {{ h }} ---
+          Result: {{ hostvars[h].host_validation.result | default('PASS') }}
+          FQDN: {{ hostvars[h].host_validation.fqdn | default(h) }}
+          Kernel: {{ hostvars[h].host_validation.kernel | default('n/a') }}
+          PHP RPM: {{ hostvars[h].host_validation.php_rpm | default('n/a') }}
+          CVE cleared: {{ hostvars[h].host_validation.cve_cleared | default('n/a') }}
+          Pending reboot: {{ hostvars[h].host_validation.pending_reboot | default(false) }}
+          Services: {{ hostvars[h].host_validation.services | default({}) }}
+          Trading Service: UP (health HTTP {{ hostvars[h].host_validation.trading_service.health_http | default('n/a') }}, home HTTP {{ hostvars[h].host_validation.trading_service.home_http | default('n/a') }})
+          SBOM delta: +{{ hostvars[h].host_validation.sbom.added | default(0) }} / -{{ hostvars[h].host_validation.sbom.removed | default(0) }} / ~{{ hostvars[h].host_validation.sbom.changed | default(0) }}
+          Changed packages: {{ hostvars[h].host_validation.sbom.changed_packages | default([]) | join(', ') | default('none') }}
+
+          {% endfor %}
+          Summary: All canary hosts passed post-checks. Critical services (sshd, chronyd, httpd) are active.
+          Trading Service application responds UP on every canary node. No pending reboot remains.
+          Package remediation verified; production deployment is recommended under emergency CR approval.
+      run_once: true
+
+    - name: Add work note — canary / stage post-checks passed
       servicenow.itsm.incident:
-        sys_id: "{{ inc_dev_sys_id }}"
+        sys_id: "{{ inc_dev_sys_id if (cr_number is not defined) else inc_prod_sys_id }}"
         other:
           work_notes: |
-            [AUTOMATED] Dev canary post-checks PASSED.
+            [AUTOMATED] Post-checks PASSED.
 
-            All services healthy. Trading Service: UP.
-            Kernel: {{ running_kernel_cmd.stdout }}
-            Pending reboot: none
-            Reboot performed during patch: {{ reboot_performed | default('n/a') }}
-            SBOM diff: {{ sbom_diff.added | default([]) | length }} RPMs added,
-            {{ sbom_diff.changed | default({}) | length }} RPMs changed.
-
-            Dev canary validated — proceeding to raise emergency CR for production.
+            {{ canary_evidence }}
       delegate_to: localhost
       become: false
       run_once: true
-      when:
-        - cr_number is not defined
-        - inc_dev_sys_id is defined
-
-    - name: Add work note — production post-checks passed
-      servicenow.itsm.incident:
-        sys_id: "{{ inc_prod_sys_id }}"
-        other:
-          work_notes: |
-            [AUTOMATED] Production post-checks PASSED.
-
-            All services healthy. Trading Service: UP.
-            Kernel: {{ running_kernel_cmd.stdout }}
-            Pending reboot: none
-            Reboot performed during patch: {{ reboot_performed | default('n/a') }}
-            SBOM diff: {{ sbom_diff.added | default([]) | length }} RPMs added,
-            {{ sbom_diff.changed | default({}) | length }} RPMs changed.
-            CMDB CIs updated.
-
-            Proceeding to Post-Implementation Review.
-      delegate_to: localhost
-      become: false
-      run_once: true
-      when:
-        - cr_number is defined
-        - inc_prod_sys_id is defined
+      when: >
+        (cr_number is not defined and inc_dev_sys_id is defined)
+        or (cr_number is defined and inc_prod_sys_id is defined)
 
     - name: Publish post-check data
       ansible.builtin.set_stats:
         data:
           postcheck_report: "{{ postcheck_report }}"
+          canary_evidence: "{{ canary_evidence }}"
+          canary_result: PASS
+          canary_recommendation: "SAFE TO DEPLOY TO PRODUCTION"
           services_healthy: true
+          trading_service_up: true
           sbom_diff_summary: "{{ sbom_diff | default({}) }}"
           validation_timestamp: "{{ ansible_date_time.iso8601 }}"
           strategy_used: "{{ strategy_used | default('package_upgrade') }}"
           cves_patched: "{{ cve_list | default([]) }}"
           kernel_after: "{{ running_kernel_cmd.stdout }}"
+          php_after: "{{ php_rpm_cmd.stdout | default('') }}"
           reboot_performed: "{{ reboot_performed | default(false) }}"
         aggregate: false
+      run_once: true

@@ -373,6 +373,15 @@ for i in json.load(sys.stdin):
   wait
   echo "  [OK] Vulnerable PHP seeded on fleet"
   echo ""
+
+  # Deploy Trading Service web app (httpd + PHP) for the visual demo
+  if [[ -x "${SCRIPT_DIR}/install-trading-service.sh" ]]; then
+    echo "  Installing Trading Service application on fleet..."
+    "${SCRIPT_DIR}/install-trading-service.sh"
+  else
+    echo "  [SKIP] install-trading-service.sh not found/executable"
+  fi
+  echo ""
 fi
 
 # --- Step 7: Sync AAP inventory ---

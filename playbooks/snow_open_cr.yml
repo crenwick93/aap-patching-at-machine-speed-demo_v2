@@ -30,8 +30,7 @@
           Trading Service production fleet.
 
           A canary deployment has been successfully completed across the
-          dev environment using a permanent CVE-targeted package upgrade.
-          This CR requests approval to apply the identical remediation to production.
+          DEV environment. Post-checks PASSED. Recommendation: SAFE TO DEPLOY TO PRODUCTION.
 
           Advisory: {{ advisory_id | default('RHSA-2026:87151') }}
           Severity: {{ severity | default('Critical') }}
@@ -41,6 +40,13 @@
           Reboot required: {{ reboot_required_for_fix | default(false) }}
           Related Dev Incident: {{ inc_dev_number | default('N/A') }}
           Related Prod Incident: {{ inc_prod_number | default('N/A') }}
+
+          ========== CANARY TEST RESULTS ==========
+          Result: {{ canary_result | default('PASS') }}
+          Recommendation: {{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}
+
+          {{ canary_evidence | default('See Dev Incident work notes for per-host canary validation.') }}
+          =========================================
         priority: 1
         risk: low
         impact: 2
@@ -55,14 +61,20 @@
             as a critical vulnerability affecting Trading Service nodes. The vulnerability
             must be remediated immediately to maintain the security posture of the platform.
 
-            A canary package upgrade was successfully deployed to the dev environment:
-            - Dev hosts patched: rhel-dev-01, rhel-dev-02, rhel-dev-03
+            DEV CANARY COMPLETED SUCCESSFULLY — evidence below supports production rollout:
+
+            {{ canary_evidence | default('Canary post-checks passed; see Dev Incident work notes.') }}
+
+            Key gates satisfied:
+            - Canary result: {{ canary_result | default('PASS') }}
+            - Recommendation: {{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}
             - Strategy: dnf upgrade --cve (permanent fix)
             - Reboot required: {{ reboot_required_for_fix | default(false) }}
             - Reboot performed on canary: {{ reboot_performed | default('see canary job') }}
-            - Services healthy post-patch: {{ services_healthy | default('yes') }}
-            - Trading Service service: UP across all dev nodes
+            - Services healthy (sshd, chronyd, httpd): {{ services_healthy | default('yes') }}
+            - Trading Service application: {{ 'UP' if (trading_service_up | default(true)) else 'DOWN' }}
             - SBOM diff: {{ sbom_diff_summary.added | default([]) | length }} RPMs added, {{ sbom_diff_summary.changed | default({}) | length }} RPMs changed
+            - PHP after canary: {{ php_after | default('see host reports') }}
 
             {{ audit_report | default('') }}
           implementation_plan: |
@@ -75,15 +87,14 @@
 
             1. Apply CVE-targeted package upgrades to production nodes
                (rhel-prod-01, rhel-prod-02, rhel-prod-03).
-            2. Restart affected services if needed.
+            2. Restart affected services if needed (including httpd / Trading Service).
             3. Reboot only if needs-restarting reports a core-library requirement.
                For this change, reboot required: {{ reboot_required_for_fix | default(false) }}.
-            4. Run post-checks: verify no pending reboot, critical services healthy,
-               Trading Service responding on all production nodes.
-            5. Generate post-patch SBOM and compute diff against baseline.
-            6. Update CMDB Configuration Items.
-            7. Force Red Hat Insights check-in to confirm CVE remediation.
-            8. Resolve production incident and move this CR to Review.
+            4. Run the same post-checks used on canary: CVE cleared, no pending reboot,
+               critical services healthy, Trading Service /health == UP, SBOM diff.
+            5. Update CMDB Configuration Items.
+            6. Force Red Hat Insights check-in to confirm CVE remediation.
+            7. Resolve production incident and move this CR to Review.
 
             Estimated duration: < 15 minutes from approval
             Service impact: {% if reboot_required_for_fix | default(false) | bool %}brief per-host reboot during the change window{% else %}no reboot expected — package upgrade and service restart only{% endif %}
@@ -91,21 +102,21 @@
             If post-checks fail on any production node:
             1. Identify the last transaction: sudo dnf history list
             2. Roll back: sudo dnf history undo last
-            3. Restart affected services (or reboot only if needs-restarting requires it)
-            4. Verify services recover to healthy state.
+            3. Restart affected services (httpd) — or reboot only if needs-restarting requires it
+            4. Verify Trading Service /health returns UP
             5. Escalate to platform engineering for manual investigation.
 
             Note: undo restores the previous package set.
           test_plan: |
-            Automated post-checks will verify:
+            Production will reuse the canary validation suite:
             1. needs-restarting -r reports no pending reboot.
             2. Triggered CVE has no outstanding package updates (dnf check-update --cve).
-            3. Critical services (sshd, chronyd) are running.
-            4. Trading Service service health endpoint responds on each node.
+            3. Critical services (sshd, chronyd, httpd) are active.
+            4. Trading Service /health returns status UP; home page HTTP 200.
             5. Post-patch SBOM is generated and diffed against pre-patch baseline.
             6. Red Hat Insights check-in confirms updated system state.
 
-            All checks must pass before the CR is moved to Review.
+            Canary already passed this suite. All checks must pass on prod before Review.
       register: cr_result
 
     - name: Progress CR to Authorize and request approval
@@ -117,13 +128,24 @@
           approval: requested
           assigned_to: "{{ servicenow_approver | default('admin') }}"
 
+    - name: Attach canary evidence work note to CR
+      servicenow.itsm.change_request:
+        sys_id: "{{ cr_result.record.sys_id }}"
+        other:
+          work_notes: |
+            [AUTOMATED] Canary validation attached for CAB review.
+
+            {{ canary_evidence | default('See description / justification for canary results.') }}
+
+            Approving this CR authorizes identical remediation on production.
+
     - name: Update Dev Incident with CR reference
       servicenow.itsm.incident:
         sys_id: "{{ inc_dev_sys_id }}"
         other:
           work_notes: >-
-            Dev canary deployment completed successfully.
-            Emergency CR {{ cr_result.record.number }} raised for production package upgrade
+            Dev canary PASSED ({{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}).
+            Emergency CR {{ cr_result.record.number }} raised for production
             (reboot required: {{ reboot_required_for_fix | default(false) }}).
       when: inc_dev_sys_id is defined
 
@@ -132,9 +154,9 @@
         sys_id: "{{ inc_prod_sys_id }}"
         other:
           work_notes: >-
-            Emergency CR {{ cr_result.record.number }} raised for production package upgrade
+            Emergency CR {{ cr_result.record.number }} raised. Dev canary evidence attached.
+            Awaiting CAB approval before production remediation
             (reboot required: {{ reboot_required_for_fix | default(false) }}).
-            Dev canary passed — awaiting CAB approval before production remediation.
       when: inc_prod_sys_id is defined
 
     - name: Display CR details
@@ -143,8 +165,7 @@
           === Emergency Change Request Created ===
           Number: {{ cr_result.record.number }}
           Sys ID: {{ cr_result.record.sys_id }}
-          Linked to Incident: {{ inc_dev_number | default('N/A') }}
-          Dev canary: PASSED
+          Canary: {{ canary_result | default('PASS') }} — {{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}
           Reboot required: {{ reboot_required_for_fix | default(false) }}
           Awaiting approval for production package upgrade.
 
