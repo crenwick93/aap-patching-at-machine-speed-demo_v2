@@ -64,7 +64,10 @@ install_one() {
 set -euo pipefail
 sudo dnf install -y httpd php 2>&1 | tail -3
 sudo mkdir -p /var/www/html
-sudo mv /tmp/index.php /tmp/health.php /var/www/html/
+sudo install -m 0644 /tmp/index.php /tmp/health.php /var/www/html/
+rm -f /tmp/index.php /tmp/health.php
+# scp lands as user_tmp_t — httpd needs httpd_sys_content_t or PHP returns "Access denied."
+sudo restorecon -Rv /var/www/html >/dev/null
 sudo tee /etc/httpd/conf.d/trading-service.conf >/dev/null <<'CONF'
 <VirtualHost *:80>
     ServerName trading-service

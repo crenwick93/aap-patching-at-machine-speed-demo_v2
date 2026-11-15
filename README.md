@@ -64,7 +64,7 @@ Red Hat Insights  ──▶  Event-Driven Ansible  ──▶  AAP Workflow
                           ▼
                    ┌───────────────┐
                    │  Post-Impl    │──▶ Resolve incidents, update
-                   │  Review       │    Insights API (Resolved)
+                   │  Review       │    resolve incidents / CR
                    └───────────────┘
 ```
 
@@ -89,7 +89,7 @@ Red Hat Insights  ──▶  Event-Driven Ansible  ──▶  AAP Workflow
 │   ├── validate.yml               # Post-checks, SBOM diff, CI updates
 │   ├── snow_open_incident.yml     # Create ServiceNow incidents
 │   ├── snow_open_cr.yml           # Create emergency change request
-│   ├── snow_close_out.yml         # PIR: resolve, Insights API (Resolved)
+│   ├── snow_close_out.yml         # PIR: resolve incidents, CR to Review
 │   └── approve_pending_workflow.yml # Bridge ServiceNow approval to AAP
 ├── rulebooks/
 │   └── cve_response.yml           # EDA rulebook (CVE events + CR polling)

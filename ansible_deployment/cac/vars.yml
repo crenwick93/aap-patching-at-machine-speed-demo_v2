@@ -75,7 +75,7 @@ controller_credentials:
       verify_ssl: "{{ aap_validate_certs }}"
 
   - name: "Lightspeed API Full Patch"
-    description: "Lightspeed/Insights API — used to update CVE status in PIR"
+    description: "Lightspeed/Insights API credential (available for future use)"
     organization: "{{ aap_organization }}"
     credential_type: "Lightspeed API Credential"
     inputs:
