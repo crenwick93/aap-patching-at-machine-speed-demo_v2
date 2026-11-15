@@ -1,0 +1,157 @@
+---
+- name: Open Incident for CVE Response
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    domain: trading-demo.chrislab.dev
+
+  tasks:
+    - name: Look up Trading Service business service
+      servicenow.itsm.configuration_item_info:
+        query:
+          - name: = Trading Service
+      register: biz_svc_lookup
+
+    - name: Look up Trading Service (Dev) application service
+      servicenow.itsm.configuration_item_info:
+        query:
+          - name: = Trading Service (Dev)
+      register: app_dev_lookup
+
+    - name: Look up Trading Service (Prod) application service
+      servicenow.itsm.configuration_item_info:
+        query:
+          - name: = Trading Service (Prod)
+      register: app_prod_lookup
+
+    - name: Create Dev environment Incident
+      servicenow.itsm.incident:
+        state: new
+        impact: high
+        urgency: high
+        short_description: >-
+          Critical kernel CVE detected — {{ advisory_id | default('RHSA-2026:25217') }}
+          affecting Trading Service (Dev)
+        description: |
+          Red Hat Insights detected a critical kernel security advisory
+          affecting the Trading Service Dev environment.
+
+          Advisory: {{ advisory_id | default('RHSA-2026:25217') }}
+          Severity: {{ severity | default('Critical') }}
+          Synopsis: {{ synopsis | default('Important: kernel security update') }}
+          Trigger host: {{ affected_host | default('N/A') }}
+
+          --- Assessment Findings ---
+          Kernel: {{ kernel_version | default('unknown') }}
+          Patch available: {{ patch_available | default('unknown') }}
+          Reboot required: {{ reboot_required_for_fix | default(true) }}
+          Kernel CVEs found: {{ cve_list | default([]) | join(', ') | default('none') }}
+          Pre-patch SBOM captured: Yes
+
+          Affected hosts:
+            - rhel-dev-01.{{ domain }}
+            - rhel-dev-02.{{ domain }}
+            - rhel-dev-03.{{ domain }}
+
+          Automated triage initiated by Event-Driven Ansible.
+          Dev environment will be patched first as a canary deployment.
+        caller: "{{ servicenow_caller | default('admin') }}"
+        other:
+          category: Software
+          subcategory: Operating System
+          cmdb_ci: "{{ app_dev_lookup.records[0].sys_id | default(omit) }}"
+          business_service: "{{ biz_svc_lookup.records[0].sys_id | default(omit) }}"
+      register: inc_dev_result
+
+    - name: Create Prod environment Incident
+      servicenow.itsm.incident:
+        state: new
+        impact: high
+        urgency: high
+        short_description: >-
+          Critical kernel CVE detected — {{ advisory_id | default('RHSA-2026:25217') }}
+          affecting Trading Service (Prod)
+        description: |
+          Red Hat Insights detected a critical kernel security advisory
+          affecting the Trading Service Prod environment.
+
+          Advisory: {{ advisory_id | default('RHSA-2026:25217') }}
+          Severity: {{ severity | default('Critical') }}
+          Synopsis: {{ synopsis | default('Important: kernel security update') }}
+          Trigger host: {{ affected_host | default('N/A') }}
+
+          --- Assessment Findings ---
+          Kernel: {{ kernel_version | default('unknown') }}
+          Patch available: {{ patch_available | default('unknown') }}
+          Reboot required: {{ reboot_required_for_fix | default(true) }}
+          Kernel CVEs found: {{ cve_list | default([]) | join(', ') | default('none') }}
+          Pre-patch SBOM captured: Yes
+
+          Affected hosts:
+            - rhel-prod-01.{{ domain }}
+            - rhel-prod-02.{{ domain }}
+            - rhel-prod-03.{{ domain }}
+
+          Automated triage initiated by Event-Driven Ansible.
+          Production will only be patched after dev canary succeeds
+          and an emergency Change Request is approved.
+        caller: "{{ servicenow_caller | default('admin') }}"
+        other:
+          category: Software
+          subcategory: Operating System
+          cmdb_ci: "{{ app_prod_lookup.records[0].sys_id | default(omit) }}"
+          business_service: "{{ biz_svc_lookup.records[0].sys_id | default(omit) }}"
+      register: inc_prod_result
+
+    - name: Add assessment work notes to Dev Incident
+      servicenow.itsm.incident:
+        sys_id: "{{ inc_dev_result.record.sys_id }}"
+        state: 2
+        other:
+          work_notes: |
+            [AUTOMATED] Kernel exposure assessment complete.
+
+            Kernel: {{ kernel_version | default('unknown') }}
+            Patch available: {{ patch_available | default('unknown') }}
+            Reboot required for fix: {{ reboot_required_for_fix | default(true) }}
+            Outstanding kernel CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
+            Pre-patch SBOM captured on all hosts.
+
+            Proceeding with dev canary full patch + reboot deployment.
+
+    - name: Add assessment work notes to Prod Incident
+      servicenow.itsm.incident:
+        sys_id: "{{ inc_prod_result.record.sys_id }}"
+        state: 2
+        other:
+          work_notes: |
+            [AUTOMATED] Kernel exposure assessment complete.
+
+            Kernel: {{ kernel_version | default('unknown') }}
+            Patch available: {{ patch_available | default('unknown') }}
+            Reboot required for fix: {{ reboot_required_for_fix | default(true) }}
+            Outstanding kernel CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
+            Pre-patch SBOM captured on all hosts.
+
+            Awaiting dev canary result before proceeding.
+            Emergency CR will be raised for production approval.
+
+    - name: Display Incident details
+      ansible.builtin.debug:
+        msg: |
+          === Incidents Created ===
+          Dev:  {{ inc_dev_result.record.number }} ({{ inc_dev_result.record.sys_id }})
+          Prod: {{ inc_prod_result.record.number }} ({{ inc_prod_result.record.sys_id }})
+          Priority: {{ inc_dev_result.record.priority }}
+          Awaiting triage by AAP workflow.
+
+    - name: Publish Incident identifiers
+      ansible.builtin.set_stats:
+        data:
+          inc_dev_sys_id: "{{ inc_dev_result.record.sys_id }}"
+          inc_dev_number: "{{ inc_dev_result.record.number }}"
+          inc_prod_sys_id: "{{ inc_prod_result.record.sys_id }}"
+          inc_prod_number: "{{ inc_prod_result.record.number }}"
+        aggregate: false

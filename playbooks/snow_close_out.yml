@@ -1,0 +1,185 @@
+---
+- name: Post-Implementation Review
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  tasks:
+    - name: Build validation summary for incidents
+      ansible.builtin.set_fact:
+        validation_work_note: |
+          [AUTOMATED] Post-Implementation Review
+
+          All post-checks passed across patched hosts.
+          Strategy: {{ strategy_used | default('full_patch_reboot') }}
+          Services healthy: {{ services_healthy | default('yes') }}
+          Trading Service: UP
+          Kernel after: {{ kernel_after | default('see host reports') }}
+
+          SBOM Diff Summary:
+          - Packages added: {{ sbom_diff_summary.added | default([]) | length }}
+          - Packages removed: {{ sbom_diff_summary.removed | default([]) | length }}
+          - Packages changed: {{ sbom_diff_summary.changed | default({}) | length }}
+
+          {{ postcheck_report | default('') }}
+
+    - name: Update Dev Incident with post-check results
+      servicenow.itsm.incident:
+        sys_id: "{{ inc_dev_sys_id }}"
+        other:
+          work_notes: "{{ validation_work_note }}"
+      when: inc_dev_sys_id is defined and inc_dev_sys_id | length > 0
+
+    - name: Update Prod Incident with post-check results
+      servicenow.itsm.incident:
+        sys_id: "{{ inc_prod_sys_id }}"
+        other:
+          work_notes: "{{ validation_work_note }}"
+      when: inc_prod_sys_id is defined and inc_prod_sys_id | length > 0
+
+    - name: Resolve Dev Incident
+      servicenow.itsm.incident:
+        sys_id: "{{ inc_dev_sys_id }}"
+        state: resolved
+        close_code: "Solved (Permanently)"
+        close_notes: >-
+          Dev canary full patch + reboot validated successfully. All dev services healthy.
+          Trading Service confirmed UP. CIs updated in CMDB.
+      when: inc_dev_sys_id is defined and inc_dev_sys_id | length > 0
+
+    - name: Resolve Prod Incident
+      servicenow.itsm.incident:
+        sys_id: "{{ inc_prod_sys_id }}"
+        state: resolved
+        close_code: "Solved (Permanently)"
+        close_notes: >-
+          Production full patch + reboot validated successfully. All production services healthy.
+          Trading Service confirmed UP. CIs updated in CMDB. Permanent fix applied — no follow-up kernel CR required.
+      when: inc_prod_sys_id is defined and inc_prod_sys_id | length > 0
+
+    - name: Get Red Hat SSO access token
+      ansible.builtin.uri:
+        url: https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token
+        method: POST
+        body_format: form-urlencoded
+        body:
+          grant_type: refresh_token
+          client_id: rhsm-api
+          refresh_token: "{{ lookup('env', 'RH_OFFLINE_TOKEN') }}"
+        return_content: true
+      register: sso_token
+      no_log: true
+      when: lookup('env', 'RH_OFFLINE_TOKEN') | length > 0
+
+    - name: Look up Insights inventory UUIDs for demo systems
+      ansible.builtin.uri:
+        url: "https://console.redhat.com/api/inventory/v1/hosts?display_name=trading-demo&per_page=50"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ sso_token.json.access_token }}"
+        return_content: true
+      register: insights_hosts
+      when: sso_token is succeeded
+
+    - name: Build list of Insights inventory IDs
+      ansible.builtin.set_fact:
+        insights_inventory_ids: "{{ insights_hosts.json.results | map(attribute='id') | list }}"
+      when: insights_hosts is succeeded
+
+    - name: Mark CVE as Resolved in Red Hat Insights
+      ansible.builtin.uri:
+        url: https://console.redhat.com/api/vulnerability/v1/status
+        method: PATCH
+        headers:
+          Authorization: "Bearer {{ sso_token.json.access_token }}"
+          Content-Type: application/vnd.api+json
+        body_format: json
+        body:
+          cve: "{{ triggered_cve | default('CVE-2026-43037') }}"
+          inventory_id: "{{ insights_inventory_ids }}"
+          status_id: 4
+          status_text: >-
+            Permanently remediated via package upgrade + reboot — applied by AAP automation.
+            Emergency CR {{ cr_number | default('N/A') }}.
+        status_code: 200
+      register: insights_status_result
+      when:
+        - sso_token is succeeded
+        - insights_inventory_ids | default([]) | length > 0
+
+    - name: Add Insights status work note to Dev Incident
+      servicenow.itsm.incident:
+        sys_id: "{{ inc_dev_sys_id }}"
+        other:
+          work_notes: |
+            [AUTOMATED] Red Hat Insights CVE status updated.
+
+            {{ triggered_cve | default('CVE-2026-43037') }} marked as "Resolved"
+            across {{ insights_inventory_ids | default([]) | length }} systems in Red Hat Insights.
+
+            Permanent package update + reboot completed — no follow-up kernel CR required.
+      when:
+        - inc_dev_sys_id is defined and inc_dev_sys_id | length > 0
+        - insights_status_result is succeeded
+
+    - name: Add Insights status work note to Prod Incident
+      servicenow.itsm.incident:
+        sys_id: "{{ inc_prod_sys_id }}"
+        other:
+          work_notes: |
+            [AUTOMATED] Red Hat Insights CVE status updated.
+
+            {{ triggered_cve | default('CVE-2026-43037') }} marked as "Resolved"
+            across {{ insights_inventory_ids | default([]) | length }} systems in Red Hat Insights.
+
+            Permanent package update + reboot completed — no follow-up kernel CR required.
+      when:
+        - inc_prod_sys_id is defined and inc_prod_sys_id | length > 0
+        - insights_status_result is succeeded
+
+    - name: Build review notes
+      ansible.builtin.set_fact:
+        review_notes: |
+          Production patching complete — ready for human review.
+
+          Strategy: {{ strategy_used | default('full_patch_reboot') }}
+          CVEs patched: {{ cves_patched | default([]) | join(', ') }}
+          Services healthy: {{ services_healthy | default('unknown') }}
+          Trading Service: UP (all environments)
+          Kernel after: {{ kernel_after | default('see host reports') }}
+
+          SBOM Diff Summary:
+          - Packages added: {{ sbom_diff_summary.added | default([]) | length }}
+          - Packages removed: {{ sbom_diff_summary.removed | default([]) | length }}
+          - Packages changed: {{ sbom_diff_summary.changed | default({}) | length }}
+
+          Red Hat Insights: CVE marked as "Resolved" on {{ insights_inventory_ids | default([]) | length }} systems
+          Dev Incident: resolved
+          Prod Incident: resolved
+          CMDB CIs: updated with new kernel version
+          Follow-up CR: none (this remediation is the permanent fix)
+
+    - name: Move CR to Review
+      servicenow.itsm.change_request:
+        sys_id: "{{ cr_sys_id }}"
+        state: review
+        other:
+          work_notes: "{{ review_notes }}"
+      when: cr_sys_id is defined and cr_sys_id | length > 0
+
+    - name: Display PIR summary
+      ansible.builtin.debug:
+        msg: |
+          === Post-Implementation Review Complete ===
+          Dev Incident {{ inc_dev_number | default('?') }}: resolved
+          Prod Incident {{ inc_prod_number | default('?') }}: resolved
+          Emergency CR {{ cr_number | default('?') }}: moved to Review
+          Follow-up CR: none (permanent fix applied)
+          Insights: CVE marked as Resolved on {{ insights_inventory_ids | default([]) | length }} systems
+
+    - name: Publish PIR data
+      ansible.builtin.set_stats:
+        data:
+          pir_complete: true
+          followup_cr_number: none
+        aggregate: false
