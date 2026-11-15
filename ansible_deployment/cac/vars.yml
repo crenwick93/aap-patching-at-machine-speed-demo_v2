@@ -4,24 +4,35 @@
 # Full package upgrade + reboot (sibling of the kpatch machine-speed demo)
 # =============================================================================
 
-# Using the Default organization
+aap_organization: "Security"
+
+# -----------------------------------------------------------------------------
+# Organizations
+# -----------------------------------------------------------------------------
+controller_organizations:
+  - name: "{{ aap_organization }}"
+    description: "Security automation — CVE response, patching, and ITSM governance demos"
 
 # -----------------------------------------------------------------------------
 # Custom Credential Types
 # -----------------------------------------------------------------------------
 controller_credential_types:
-  - name: "Red Hat API Token"
-    description: "Offline token for Red Hat Console APIs (Insights, RHSM)"
+  - name: "Lightspeed API Credential"
+    description: "OAuth2 client credentials for Red Hat Lightspeed / Insights APIs"
     kind: cloud
     inputs:
       fields:
-        - id: rh_offline_token
+        - id: lightspeed_client_id
           type: string
-          label: "Red Hat Offline Token"
+          label: "Client ID"
+        - id: lightspeed_client_secret
+          type: string
+          label: "Client Secret"
           secret: true
     injectors:
       env:
-        RH_OFFLINE_TOKEN: !unsafe "{{ rh_offline_token }}"
+        LIGHTSPEED_CLIENT_ID: !unsafe "{{ lightspeed_client_id }}"
+        LIGHTSPEED_CLIENT_SECRET: !unsafe "{{ lightspeed_client_secret }}"
 
 # -----------------------------------------------------------------------------
 # Credentials
@@ -29,7 +40,7 @@ controller_credential_types:
 controller_credentials:
   - name: "Demo SSH Key"
     description: "SSH access to demo EC2 instances (ec2-user)"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     credential_type: "Machine"
     inputs:
       username: ec2-user
@@ -37,7 +48,7 @@ controller_credentials:
 
   - name: "AWS Demo"
     description: "AWS credentials for dynamic EC2 inventory discovery"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     credential_type: "Amazon Web Services"
     inputs:
       username: "{{ aws_access_key }}"
@@ -45,7 +56,7 @@ controller_credentials:
 
   - name: "ServiceNow PDI"
     description: "ServiceNow developer instance for ITSM integration"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     credential_type: "ServiceNow Credential"
     inputs:
       SN_HOST: "{{ servicenow_instance_url }}"
@@ -54,19 +65,20 @@ controller_credentials:
 
   - name: "AAP Controller"
     description: "Controller credential for internal workflow approval automation"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     credential_type: "Red Hat Ansible Automation Platform"
     inputs:
       host: "{{ aap_internal_host }}"
       oauth_token: "{{ aap_token }}"
       verify_ssl: "{{ aap_validate_certs }}"
 
-  - name: "Red Hat Console API"
-    description: "Offline token for Red Hat Insights API — used to update CVE status"
-    organization: "Default"
-    credential_type: "Red Hat API Token"
+  - name: "Lightspeed API Full Patch"
+    description: "Lightspeed/Insights API — used to update CVE status in PIR"
+    organization: "{{ aap_organization }}"
+    credential_type: "Lightspeed API Credential"
     inputs:
-      rh_offline_token: "{{ rh_offline_token }}"
+      lightspeed_client_id: "{{ lightspeed_client_id }}"
+      lightspeed_client_secret: "{{ lightspeed_client_secret }}"
 
 # -----------------------------------------------------------------------------
 # Projects
@@ -74,7 +86,7 @@ controller_credentials:
 controller_projects:
   - name: "Full Patching at Machine Speed"
     description: "EDA-driven enterprise full patch + reboot with ServiceNow governance"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     scm_type: "git"
     scm_url: "{{ git_repo_url }}"
     scm_branch: "main"
@@ -86,7 +98,7 @@ controller_projects:
 controller_inventories:
   - name: "Full Patching Demo"
     description: "Demo RHEL instances — 3 dev + 3 prod (tag:demo=patching-full)"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
 
 # -----------------------------------------------------------------------------
 # Inventory Sources (dynamic — AWS EC2 with dev/prod grouping)
@@ -120,7 +132,7 @@ controller_inventory_sources:
 controller_templates:
   - name: "Pre-check System Readiness Full Patch"
     description: "Gate: disk, memory, services, load, no pending reboot"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
     playbook: "playbooks/precheck.yml"
@@ -131,7 +143,7 @@ controller_templates:
 
   - name: "Assess Patch Exposure"
     description: "Intelligence: kernel version, advisories, CVEs, patch availability, SBOM"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
     playbook: "playbooks/assess.yml"
@@ -144,7 +156,7 @@ controller_templates:
 
   - name: "Apply Full Patch"
     description: "Package upgrade + reboot — permanent CVE remediation"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
     playbook: "playbooks/patch.yml"
@@ -157,7 +169,7 @@ controller_templates:
 
   - name: "Post-checks Full Patch"
     description: "Verify reboot complete, services healthy, CVE cleared, SBOM diff, CI update"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
     playbook: "playbooks/validate.yml"
@@ -170,7 +182,7 @@ controller_templates:
 
   - name: "Open Incident Full Patch"
     description: "Create security Incident in ServiceNow linked to affected CIs"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
     playbook: "playbooks/snow_open_incident.yml"
@@ -181,7 +193,7 @@ controller_templates:
 
   - name: "Open Emergency CR Full Patch"
     description: "Raise emergency CR with canary evidence, await approval for production"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
     playbook: "playbooks/snow_open_cr.yml"
@@ -192,7 +204,7 @@ controller_templates:
 
   - name: "Post-Implementation Review Full Patch"
     description: "CR to Review, update Insights CVE status as Resolved"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
     playbook: "playbooks/snow_close_out.yml"
@@ -200,11 +212,11 @@ controller_templates:
     ask_variables_on_launch: true
     credentials:
       - "ServiceNow PDI"
-      - "Red Hat Console API"
+      - "Lightspeed API Full Patch"
 
   - name: "Bridge CR Approval Full Patch"
     description: "Relay ServiceNow CR approval to the paused AAP workflow node"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
     playbook: "playbooks/approve_pending_workflow.yml"
@@ -222,7 +234,7 @@ controller_workflows:
     description: >-
       EDA-triggered workflow: assess exposure, open Incidents, run canary full patch
       + reboot on dev, raise emergency CR for prod, await approval, patch+reboot prod, close ITIL records.
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     ask_variables_on_launch: true
     simplified_workflow_nodes:
 
@@ -290,13 +302,13 @@ controller_workflows:
 eda_decision_environments:
   - name: "ServiceNow DE"
     description: "Decision environment with servicenow.itsm for CR polling"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     image_url: "quay.io/crenwick93/snow-de:latest"
 
 eda_projects:
   - name: "Full Patching at Machine Speed"
     description: "EDA rulebooks for full-patch CVE response and ServiceNow approval bridge"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     url: "{{ git_repo_url }}"
     wait: true
 
@@ -304,7 +316,7 @@ eda_credentials:
   - name: "AAP Controller Token"
     description: "Controller credential so EDA can launch workflow templates"
     credential_type: "Red Hat Ansible Automation Platform"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     inputs:
       host: "{{ (aap_hostname | regex_replace('/+$','')) ~ '/api/controller/' }}"
       oauth_token: "{{ aap_token }}"
@@ -313,7 +325,7 @@ eda_credentials:
   - name: "ServiceNow EDA"
     description: "ServiceNow credentials for the EDA records source plugin"
     credential_type: "ServiceNow Credential"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     inputs:
       SN_HOST: "{{ servicenow_instance_url }}"
       SN_USERNAME: "{{ servicenow_username }}"
@@ -322,7 +334,7 @@ eda_credentials:
   - name: "Lightspeed CVE Events Full Patch token"
     description: "Token auth for simulated Lightspeed CVE webhook events (full patch demo)"
     credential_type: "Token Event Stream"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     inputs:
       auth_type: token
       token: "{{ eda_event_stream_token }}"
@@ -330,7 +342,7 @@ eda_credentials:
 
 eda_event_streams:
   - name: "Lightspeed CVE Events Full Patch token"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     credential_name: "Lightspeed CVE Events Full Patch token"
     event_stream_type: token
     test_mode: false
@@ -338,7 +350,7 @@ eda_event_streams:
 eda_rulebook_activations:
   - name: "Full Patch CVE Response"
     description: "Monitors Lightspeed for CVE events and ServiceNow for CR approvals (full patch)"
-    organization: "Default"
+    organization: "{{ aap_organization }}"
     project: "Full Patching at Machine Speed"
     rulebook: "cve_response.yml"
     decision_environment: "ServiceNow DE"

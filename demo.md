@@ -18,7 +18,7 @@ Have these open and ready:
 | Red Hat Insights — Vulnerabilities | console.redhat.com > Insights > Vulnerability > CVEs |
 | AAP — Workflow Jobs | AAP > Jobs (filtered to Workflow Jobs) |
 | AAP — Workflow Visualizer | AAP > Templates > Trading Service: CVE Full Patch Response > Visualizer |
-| Terminal | SSH ready: `ssh -i colombo-demo.pem ec2-user@rhel-dev-01.trading-demo.chrislab.dev` |
+| Terminal | SSH ready: `ssh -i patching-demo.pem ec2-user@rhel-dev-01.trading-demo.chrislab.dev` |
 | Terminal | Local shell in the repo root for running the simulate script |
 
 Make sure the demo has been reset (`scripts/reset-demo.sh`), ServiceNow is clean (`scripts/cleanup-servicenow.sh --all`), and the EDA rulebook activation **Full Patch CVE Response** is running.
@@ -26,8 +26,8 @@ Make sure the demo has been reset (`scripts/reset-demo.sh`), ServiceNow is clean
 The reset script automatically updates `/etc/hosts` with the current IPs for `rhel-dev-01` and `rhel-prod-01`, so you can SSH using their FQDNs:
 
 ```bash
-ssh -i colombo-demo.pem ec2-user@rhel-dev-01.trading-demo.chrislab.dev
-ssh -i colombo-demo.pem ec2-user@rhel-prod-01.trading-demo.chrislab.dev
+ssh -i patching-demo.pem ec2-user@rhel-dev-01.trading-demo.chrislab.dev
+ssh -i patching-demo.pem ec2-user@rhel-prod-01.trading-demo.chrislab.dev
 ```
 
 ---

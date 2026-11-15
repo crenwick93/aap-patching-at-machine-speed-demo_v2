@@ -115,6 +115,7 @@ Distinct from the kpatch sibling so both demos can coexist on one AAP:
 
 | Object | Name |
 |--------|------|
+| Organization | `Security` |
 | Workflow | `Trading Service: CVE Full Patch Response` |
 | Project / EDA project | `Full Patching at Machine Speed` |
 | Inventory | `Full Patching Demo` |
@@ -152,10 +153,10 @@ cp .env.example .env
 | `DEMO_SUBNET_ID` | VPC subnet for demo instances |
 | `DEMO_SECURITY_GROUP_ID` | Security group allowing SSH (port 22) from your IP |
 | `DEMO_KEY_NAME` | AWS key pair name |
-| `RH_USERNAME` | Red Hat account username |
-| `RH_PASSWORD` | Red Hat account password |
 | `RH_ORG_ID` | Red Hat org ID (for subscription-manager) |
-| `RH_OFFLINE_TOKEN` | Red Hat offline API token ([generate here](https://console.redhat.com/iam/service-accounts)) |
+| `RH_ACTIVATION_KEY` | RHSM activation key ([create here](https://console.redhat.com/insights/connector/activation-keys)) |
+| `LIGHTSPEED_CLIENT_ID` | Lightspeed/Insights service account client ID |
+| `LIGHTSPEED_CLIENT_SECRET` | Lightspeed/Insights service account client secret ([IAM → Service Accounts](https://console.redhat.com/iam/service-accounts)) |
 | `SERVICENOW_INSTANCE_URL` | ServiceNow instance URL |
 | `SERVICENOW_USERNAME` | ServiceNow admin username |
 | `SERVICENOW_PASSWORD` | ServiceNow admin password |

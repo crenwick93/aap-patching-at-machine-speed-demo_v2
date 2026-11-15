@@ -57,19 +57,22 @@
           Trading Service confirmed UP. CIs updated in CMDB. Permanent fix applied — no follow-up kernel CR required.
       when: inc_prod_sys_id is defined and inc_prod_sys_id | length > 0
 
-    - name: Get Red Hat SSO access token
+    - name: Get Red Hat SSO access token (Lightspeed service account)
       ansible.builtin.uri:
         url: https://sso.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token
         method: POST
         body_format: form-urlencoded
         body:
-          grant_type: refresh_token
-          client_id: rhsm-api
-          refresh_token: "{{ lookup('env', 'RH_OFFLINE_TOKEN') }}"
+          grant_type: client_credentials
+          client_id: "{{ lookup('env', 'LIGHTSPEED_CLIENT_ID') }}"
+          client_secret: "{{ lookup('env', 'LIGHTSPEED_CLIENT_SECRET') }}"
         return_content: true
+        status_code: 200
       register: sso_token
       no_log: true
-      when: lookup('env', 'RH_OFFLINE_TOKEN') | length > 0
+      when:
+        - lookup('env', 'LIGHTSPEED_CLIENT_ID') | length > 0
+        - lookup('env', 'LIGHTSPEED_CLIENT_SECRET') | length > 0
 
     - name: Look up Insights inventory UUIDs for demo systems
       ansible.builtin.uri:

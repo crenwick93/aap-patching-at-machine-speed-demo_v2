@@ -36,8 +36,8 @@ The EDA rulebook uses `servicenow.itsm.records`, which requires a Decision Envir
 | ServiceNow credentials | Incident/CR management + EDA polling |
 | AWS credentials | EC2 provisioning + dynamic inventory |
 | SSH key | Demo host access |
-| RHSM username/password + org | Subscribe + register Insights on fresh nodes |
-| Red Hat offline token | Insights CVE status update in PIR |
+| RHSM org + activation key | Subscribe + register Insights on fresh nodes |
+| Lightspeed client ID/secret | Insights CVE status update in PIR |
 
 ## Sibling demos
 

@@ -22,7 +22,7 @@
     aap_configuration_async_delay: 5
 
     # Resolve SSH key to an absolute path (relative lookup('file') breaks under EE / odd cwd)
-    probe_ssh_key_path: "{{ lookup('env', 'PROBE_SSH_KEY_PATH') | default('./colombo-demo.pem', true) }}"
+    probe_ssh_key_path: "{{ lookup('env', 'PROBE_SSH_KEY_PATH') | default('./patching-demo.pem', true) }}"
     probe_ssh_key: "{{ lookup('file', probe_ssh_key_path | realpath, errors='ignore') | default(omit, true) }}"
 
     aws_access_key: "{{ lookup('env', 'AWS_ACCESS_KEY_ID') | default(omit, true) }}"
@@ -36,7 +36,8 @@
 
     eda_event_stream_token: "{{ lookup('env', 'EDA_EVENT_STREAM_TOKEN') | default(omit, true) }}"
 
-    rh_offline_token: "{{ lookup('env', 'RH_OFFLINE_TOKEN') | default(omit, true) }}"
+    lightspeed_client_id: "{{ lookup('env', 'LIGHTSPEED_CLIENT_ID') | default(omit, true) }}"
+    lightspeed_client_secret: "{{ lookup('env', 'LIGHTSPEED_CLIENT_SECRET') | default(omit, true) }}"
 
   vars_files:
     - vars.yml

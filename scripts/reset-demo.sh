@@ -31,7 +31,7 @@ AMI="${DEMO_AMI_ID:?Set DEMO_AMI_ID in .env}"
 INSTANCE_TYPE="${DEMO_INSTANCE_TYPE:-t3.small}"
 SUBNET="${DEMO_SUBNET_ID:?Set DEMO_SUBNET_ID in .env}"
 SG="${DEMO_SECURITY_GROUP_ID:?Set DEMO_SECURITY_GROUP_ID in .env}"
-KEY_NAME="${DEMO_KEY_NAME:-colombo-demo}"
+KEY_NAME="${DEMO_KEY_NAME:-patching-demo}"
 DOMAIN="trading-demo.chrislab.dev"
 SSH_KEY="${PROBE_SSH_KEY_PATH:?Set PROBE_SSH_KEY_PATH in .env}"
 SSH_USER="ec2-user"
@@ -40,13 +40,13 @@ AAP_HOST="${AAP_HOSTNAME:?Set AAP_HOSTNAME in .env}"
 AAP_HOST="${AAP_HOST%/}"
 AAP_TOKEN_VAL="${AAP_TOKEN:?Set AAP_TOKEN in .env}"
 
-RH_USER="${RH_USERNAME:-}"
-RH_PASS="${RH_PASSWORD:-}"
 RH_ORG="${RH_ORG_ID:-}"
+RH_AK="${RH_ACTIVATION_KEY:-}"
 
-if [[ -z "$RH_USER" || -z "$RH_PASS" ]]; then
-  echo "WARNING: RH_USERNAME / RH_PASSWORD not set in .env"
+if [[ -z "$RH_ORG" || -z "$RH_AK" ]]; then
+  echo "WARNING: RH_ORG_ID / RH_ACTIVATION_KEY not set in .env"
   echo "         Instances will NOT be registered with Insights."
+  echo "         Create a key at: https://console.redhat.com/insights/connector/activation-keys"
   echo ""
 fi
 
@@ -199,8 +199,8 @@ echo ""
 # --- Step 6: Register with Insights ---
 echo "-- Step 6/7: Registering instances with Red Hat Insights --"
 
-if [[ -z "$RH_USER" || -z "$RH_PASS" ]]; then
-  echo "  Skipped (RH_USERNAME / RH_PASSWORD not set)"
+if [[ -z "$RH_ORG" || -z "$RH_AK" ]]; then
+  echo "  Skipped (RH_ORG_ID / RH_ACTIVATION_KEY not set)"
   echo ""
 else
   # Wait for SSH on all hosts first
@@ -233,8 +233,7 @@ else
   echo "  [OK] Cloud-init finished"
   echo ""
 
-  EXPECTED_ORG="${RH_ORG:-}"
-  echo "  Registering hosts (expected org: ${EXPECTED_ORG:-any})..."
+  echo "  Registering hosts (org: ${RH_ORG}, activation key: ${RH_AK})..."
   register_one() {
     local hname="$1" hip="$2"
     local hfqdn="${hname}.${DOMAIN}"
@@ -243,7 +242,7 @@ else
     for attempt in $(seq 1 $max_attempts); do
       local out
       out=$(ssh $SSH_OPTS -i "$SSH_KEY" "${SSH_USER}@${hip}" "bash -s" 2>&1 <<REGSCRPT
-# Kill rhcd and rhsmcertd (auto_registration overwrites our --org)
+# Kill rhcd and rhsmcertd (auto_registration overwrites our org)
 sudo systemctl stop rhcd.service 2>/dev/null || true
 sudo systemctl disable rhcd.service 2>/dev/null || true
 sudo systemctl mask rhcd.service 2>/dev/null || true
@@ -257,39 +256,27 @@ sudo subscription-manager unregister 2>/dev/null || true
 sudo rm -f /etc/insights-client/machine-id /etc/insights-client/.registered
 sudo rm -rf /etc/pki/consumer/* /etc/pki/entitlement/*
 sudo rm -rf /var/lib/rhsm/cache/* /var/lib/rhsm/facts/*
-# Register fresh
-sudo subscription-manager register --username='${RH_USER}' --password='${RH_PASS}' --org='${EXPECTED_ORG}' --force 2>&1
-# Verify org before proceeding
+# Register with activation key
+sudo subscription-manager register --org='${RH_ORG}' --activationkey='${RH_AK}' --force 2>&1
 org=\$(sudo subscription-manager identity 2>&1 | grep 'org name' | awk '{print \$NF}')
 echo "RHSM_ORG=\${org}"
 # Register and upload to Insights
 sudo insights-client --register 2>&1
-# Re-enable rhsmcertd for cert renewal (auto_registration already disabled)
 sudo systemctl unmask rhsmcertd.service 2>/dev/null || true
 sudo systemctl enable --now rhsmcertd.service 2>/dev/null || true
-# Enable periodic uploads so Insights reflects post-patch state
 sudo systemctl unmask insights-client.timer 2>/dev/null || true
 sudo systemctl enable --now insights-client.timer 2>/dev/null || true
 sudo insights-client 2>&1 | tail -1
 REGSCRPT
 )
-      local registered_org
-      registered_org=$(echo "$out" | grep "^RHSM_ORG=" | cut -d= -f2)
-      local acct_line
-      acct_line=$(echo "$out" | grep "account " | tail -1)
-
-      if [[ -n "$EXPECTED_ORG" && "$registered_org" != "$EXPECTED_ORG" ]]; then
-        echo "  [RETRY ${attempt}/${max_attempts}] ${hfqdn} -- wrong org ${registered_org}, expected ${EXPECTED_ORG}"
-        continue
-      fi
-
       if echo "$out" | grep -q "Successfully uploaded"; then
-        echo "  [OK] ${hfqdn} -- ${acct_line} (org: ${registered_org})"
+        echo "  [OK] ${hfqdn}"
         return 0
       fi
+      echo "  [RETRY ${attempt}/${max_attempts}] ${hfqdn}"
     done
 
-    echo "  [FAIL] ${hfqdn} -- could not register to correct org after ${max_attempts} attempts"
+    echo "  [FAIL] ${hfqdn} -- could not register after ${max_attempts} attempts"
     return 1
   }
 
@@ -398,7 +385,7 @@ for i in json.load(sys.stdin):
 done
 
 if [[ "$HOSTS_UPDATED" -gt 0 ]]; then
-  echo "  You can now: ssh -i colombo-demo.pem ec2-user@rhel-dev-01.trading-demo.chrislab.dev"
+  echo "  You can now: ssh -i patching-demo.pem ec2-user@rhel-dev-01.trading-demo.chrislab.dev"
 fi
 
 echo ""
