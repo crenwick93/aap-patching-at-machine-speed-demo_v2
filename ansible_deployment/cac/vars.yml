@@ -9,7 +9,8 @@ aap_organization: "Security"
 # -----------------------------------------------------------------------------
 # Organizations
 # -----------------------------------------------------------------------------
-controller_organizations:
+# AAP 2.5+ CaC uses gateway orgs via aap_organizations (not controller_organizations)
+aap_organizations:
   - name: "{{ aap_organization }}"
     description: "Security automation — CVE response, patching, and ITSM governance demos"
 
@@ -38,7 +39,7 @@ controller_credential_types:
 # Credentials
 # -----------------------------------------------------------------------------
 controller_credentials:
-  - name: "Demo SSH Key"
+  - name: "Demo SSH Key Full Patch"
     description: "SSH access to demo EC2 instances (ec2-user)"
     organization: "{{ aap_organization }}"
     credential_type: "Machine"
@@ -46,7 +47,7 @@ controller_credentials:
       username: ec2-user
       ssh_key_data: "{{ probe_ssh_key }}"
 
-  - name: "AWS Demo"
+  - name: "AWS Demo Full Patch"
     description: "AWS credentials for dynamic EC2 inventory discovery"
     organization: "{{ aap_organization }}"
     credential_type: "Amazon Web Services"
@@ -54,7 +55,7 @@ controller_credentials:
       username: "{{ aws_access_key }}"
       password: "{{ aws_secret_key }}"
 
-  - name: "ServiceNow PDI"
+  - name: "ServiceNow PDI Full Patch"
     description: "ServiceNow developer instance for ITSM integration"
     organization: "{{ aap_organization }}"
     credential_type: "ServiceNow Credential"
@@ -63,7 +64,7 @@ controller_credentials:
       SN_USERNAME: "{{ servicenow_username }}"
       SN_PASSWORD: "{{ servicenow_password }}"
 
-  - name: "AAP Controller"
+  - name: "AAP Controller Full Patch"
     description: "Controller credential for internal workflow approval automation"
     organization: "{{ aap_organization }}"
     credential_type: "Red Hat Ansible Automation Platform"
@@ -107,7 +108,7 @@ controller_inventory_sources:
   - name: "AWS EC2 Discovery Full Patch"
     inventory: "Full Patching Demo"
     source: "ec2"
-    credential: "AWS Demo"
+    credential: "AWS Demo Full Patch"
     overwrite: true
     update_on_launch: true
     source_vars:
@@ -139,7 +140,7 @@ controller_templates:
     inventory: "Full Patching Demo"
     ask_limit_on_launch: true
     credentials:
-      - "Demo SSH Key"
+      - "Demo SSH Key Full Patch"
 
   - name: "Assess Patch Exposure"
     description: "Intelligence: kernel version, advisories, CVEs, patch availability, SBOM"
@@ -151,8 +152,8 @@ controller_templates:
     ask_variables_on_launch: true
     ask_limit_on_launch: true
     credentials:
-      - "Demo SSH Key"
-      - "ServiceNow PDI"
+      - "Demo SSH Key Full Patch"
+      - "ServiceNow PDI Full Patch"
 
   - name: "Apply Full Patch"
     description: "Package upgrade + reboot — permanent CVE remediation"
@@ -164,8 +165,8 @@ controller_templates:
     ask_variables_on_launch: true
     ask_limit_on_launch: true
     credentials:
-      - "Demo SSH Key"
-      - "ServiceNow PDI"
+      - "Demo SSH Key Full Patch"
+      - "ServiceNow PDI Full Patch"
 
   - name: "Post-checks Full Patch"
     description: "Verify reboot complete, services healthy, CVE cleared, SBOM diff, CI update"
@@ -177,8 +178,8 @@ controller_templates:
     ask_variables_on_launch: true
     ask_limit_on_launch: true
     credentials:
-      - "Demo SSH Key"
-      - "ServiceNow PDI"
+      - "Demo SSH Key Full Patch"
+      - "ServiceNow PDI Full Patch"
 
   - name: "Open Incident Full Patch"
     description: "Create security Incident in ServiceNow linked to affected CIs"
@@ -189,7 +190,7 @@ controller_templates:
     inventory: "Full Patching Demo"
     ask_variables_on_launch: true
     credentials:
-      - "ServiceNow PDI"
+      - "ServiceNow PDI Full Patch"
 
   - name: "Open Emergency CR Full Patch"
     description: "Raise emergency CR with canary evidence, await approval for production"
@@ -200,7 +201,7 @@ controller_templates:
     inventory: "Full Patching Demo"
     ask_variables_on_launch: true
     credentials:
-      - "ServiceNow PDI"
+      - "ServiceNow PDI Full Patch"
 
   - name: "Post-Implementation Review Full Patch"
     description: "CR to Review, update Insights CVE status as Resolved"
@@ -211,7 +212,7 @@ controller_templates:
     inventory: "Full Patching Demo"
     ask_variables_on_launch: true
     credentials:
-      - "ServiceNow PDI"
+      - "ServiceNow PDI Full Patch"
       - "Lightspeed API Full Patch"
 
   - name: "Bridge CR Approval Full Patch"
@@ -223,7 +224,7 @@ controller_templates:
     inventory: "Full Patching Demo"
     ask_variables_on_launch: true
     credentials:
-      - "AAP Controller"
+      - "AAP Controller Full Patch"
 
 
 # -----------------------------------------------------------------------------
@@ -300,7 +301,7 @@ controller_workflows:
 # =============================================================================
 
 eda_decision_environments:
-  - name: "ServiceNow DE"
+  - name: "ServiceNow DE Full Patch"
     description: "Decision environment with servicenow.itsm for CR polling"
     organization: "{{ aap_organization }}"
     image_url: "quay.io/crenwick93/snow-de:latest"
@@ -313,7 +314,7 @@ eda_projects:
     wait: true
 
 eda_credentials:
-  - name: "AAP Controller Token"
+  - name: "AAP Controller Token Full Patch"
     description: "Controller credential so EDA can launch workflow templates"
     credential_type: "Red Hat Ansible Automation Platform"
     organization: "{{ aap_organization }}"
@@ -322,7 +323,7 @@ eda_credentials:
       oauth_token: "{{ aap_token }}"
       verify_ssl: "{{ aap_validate_certs }}"
 
-  - name: "ServiceNow EDA"
+  - name: "ServiceNow EDA Full Patch"
     description: "ServiceNow credentials for the EDA records source plugin"
     credential_type: "ServiceNow Credential"
     organization: "{{ aap_organization }}"
@@ -353,11 +354,11 @@ eda_rulebook_activations:
     organization: "{{ aap_organization }}"
     project: "Full Patching at Machine Speed"
     rulebook: "cve_response.yml"
-    decision_environment: "ServiceNow DE"
+    decision_environment: "ServiceNow DE Full Patch"
     enabled: true
     source_mappings:
       - source_name: insights_events
         event_stream_name: "Lightspeed CVE Events Full Patch token"
     eda_credentials:
-      - "AAP Controller Token"
-      - "ServiceNow EDA"
+      - "AAP Controller Token Full Patch"
+      - "ServiceNow EDA Full Patch"
