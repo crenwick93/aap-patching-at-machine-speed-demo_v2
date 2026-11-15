@@ -49,7 +49,16 @@
           Reboot required: {{ reboot_required_for_fix | default(false) }}
           Related CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
           Packages: {{ packages_for_cve | default([]) | join(', ') | default('see assessment') }}
-          Pre-patch SBOM captured: Yes
+          Pre-patch SBOM file: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
+
+          Exposed packages (installed → upgrade target):
+          {% if package_upgrade_lines | default([]) | length > 0 %}
+          {% for line in package_upgrade_lines %}
+            {{ line }}
+          {% endfor %}
+          {% else %}
+          {{ package_exposure_report | default('Pending host assessment detail') }}
+          {% endif %}
 
           Affected hosts:
             - rhel-dev-01.{{ domain }}
@@ -89,7 +98,16 @@
           Reboot required: {{ reboot_required_for_fix | default(false) }}
           Related CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
           Packages: {{ packages_for_cve | default([]) | join(', ') | default('see assessment') }}
-          Pre-patch SBOM captured: Yes
+          Pre-patch SBOM file: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
+
+          Exposed packages (installed → upgrade target):
+          {% if package_upgrade_lines | default([]) | length > 0 %}
+          {% for line in package_upgrade_lines %}
+            {{ line }}
+          {% endfor %}
+          {% else %}
+          {{ package_exposure_report | default('Pending host assessment detail') }}
+          {% endif %}
 
           Affected hosts:
             - rhel-prod-01.{{ domain }}
@@ -120,7 +138,11 @@
             Reboot required for fix: {{ reboot_required_for_fix | default(false) }}
             Related CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
             Packages: {{ packages_for_cve | default([]) | join(', ') | default('see assessment') }}
-            Pre-patch SBOM captured on all hosts.
+            SBOM baseline: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
+            Upgrade plan:
+            {% for line in package_upgrade_lines | default([]) %}
+              {{ line }}
+            {% endfor %}
 
             Proceeding with dev canary package upgrade
             {% if reboot_required_for_fix | default(false) | bool %}(reboot expected){% else %}(no reboot expected){% endif %}.
@@ -138,7 +160,11 @@
             Reboot required for fix: {{ reboot_required_for_fix | default(false) }}
             Related CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
             Packages: {{ packages_for_cve | default([]) | join(', ') | default('see assessment') }}
-            Pre-patch SBOM captured on all hosts.
+            SBOM baseline: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
+            Upgrade plan:
+            {% for line in package_upgrade_lines | default([]) %}
+              {{ line }}
+            {% endfor %}
 
             Awaiting dev canary result before proceeding.
             Emergency CR will be raised for production approval.

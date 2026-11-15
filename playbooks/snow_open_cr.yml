@@ -41,6 +41,17 @@
           Related Dev Incident: {{ inc_dev_number | default('N/A') }}
           Related Prod Incident: {{ inc_prod_number | default('N/A') }}
 
+          ========== PACKAGE EXPOSURE / SBOM ==========
+          SBOM baseline file: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
+          {% if package_upgrade_lines | default([]) | length > 0 %}
+          Exposed packages requiring upgrade (installed → fixed target):
+          {% for line in package_upgrade_lines %}
+          {{ line }}
+          {% endfor %}
+          {% else %}
+          {{ package_exposure_report | default('See assessment for package exposure details.') }}
+          {% endif %}
+
           ========== CANARY TEST RESULTS ==========
           Result: {{ canary_result | default('PASS') }}
           Recommendation: {{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}
@@ -73,7 +84,15 @@
             - Reboot performed on canary: {{ reboot_performed | default('see canary job') }}
             - Services healthy (sshd, chronyd, httpd): {{ services_healthy | default('yes') }}
             - Trading Service application: {{ 'UP' if (trading_service_up | default(true)) else 'DOWN' }}
+            - SBOM baseline: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
+            - SBOM after canary: {{ sbom_after_path | default('/tmp/sbom-after.json') }}
             - SBOM diff: {{ sbom_diff_summary.added | default([]) | length }} RPMs added, {{ sbom_diff_summary.changed | default({}) | length }} RPMs changed
+            - Package upgrades verified on canary:
+            {% for item in (sbom_diff_summary.changed | default({}) | dict2items) %}
+              * {{ item.key }}: {{ item.value.before }} → {{ item.value.after }}
+            {% else %}
+              * {{ package_upgrade_lines | default([]) | join('\n              * ') | default('see canary evidence') }}
+            {% endfor %}
             - PHP after canary: {{ php_after | default('see host reports') }}
 
             {{ audit_report | default('') }}

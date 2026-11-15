@@ -43,6 +43,72 @@
       failed_when: false
       when: triggered_cve is defined and triggered_cve | length > 0
 
+    - name: Build package exposure / upgrade plan for triggered CVE
+      ansible.builtin.shell: |
+        python3 <<'PY'
+        import json, subprocess
+        cve = "{{ triggered_cve }}"
+        # Available updates for this CVE: name.arch  version-release  repo
+        chk = subprocess.run(
+            ["dnf", "check-update", "--cve", cve],
+            capture_output=True, text=True
+        )
+        updates = {}
+        for line in chk.stdout.splitlines():
+            line = line.strip()
+            if not line or line.startswith("Last metadata") or line.startswith("Security"):
+                continue
+            parts = line.split()
+            if len(parts) < 2:
+                continue
+            nevra_name = parts[0]  # e.g. php.x86_64
+            target_ver = parts[1]  # e.g. 8.0.30-8.el9_8.1
+            base = nevra_name.rsplit(".", 1)[0]
+            updates[base] = {"available": target_ver, "repo": parts[2] if len(parts) > 2 else ""}
+
+        plan = []
+        for base, meta in sorted(updates.items()):
+            # installed NVR
+            q = subprocess.run(["rpm", "-q", "--qf", "%{NAME}-%{VERSION}-%{RELEASE}.%{ARCH}", base],
+                               capture_output=True, text=True)
+            installed = q.stdout.strip() if q.returncode == 0 else "not-installed"
+            # target NEVRA-ish display
+            arch = ""
+            if installed.endswith(".x86_64") or installed.endswith(".noarch") or installed.endswith(".aarch64"):
+                arch = "." + installed.rsplit(".", 1)[-1]
+            target = f"{base}-{meta['available']}{arch}" if not meta["available"].startswith(base) else meta["available"]
+            if installed != "not-installed" and not target.endswith(arch) and arch:
+                # available is version-release only
+                target = f"{base}-{meta['available']}{arch}"
+            plan.append({
+                "package": base,
+                "installed": installed,
+                "available": meta["available"],
+                "upgrade_to": target,
+                "repo": meta["repo"],
+                "line": f"{installed}  →  {target}",
+            })
+        print(json.dumps({"cve": cve, "packages": plan, "count": len(plan)}))
+        PY
+      register: upgrade_plan_cmd
+      changed_when: false
+      failed_when: false
+      when: triggered_cve is defined and triggered_cve | length > 0
+
+    - name: Set package upgrade plan facts
+      ansible.builtin.set_fact:
+        package_upgrade_plan: "{{ upgrade_plan_cmd.stdout | from_json }}"
+        package_upgrade_lines: >-
+          {{
+            (upgrade_plan_cmd.stdout | from_json).packages
+            | map(attribute='line')
+            | list
+          }}
+      when:
+        - triggered_cve is defined and triggered_cve | length > 0
+        - upgrade_plan_cmd.stdout is defined
+        - upgrade_plan_cmd.stdout | length > 0
+
     - name: Extract CVE list from advisory for triggered CVE
       ansible.builtin.shell: >
         dnf updateinfo info --cve {{ triggered_cve }} 2>/dev/null
@@ -123,6 +189,21 @@
       changed_when: true
       when: syft_check.rc != 0
 
+    - name: Build human-readable exposure report
+      ansible.builtin.set_fact:
+        package_exposure_report: |
+          EXPOSED PACKAGES ({{ triggered_cve | default('N/A') }})
+          SBOM baseline file: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
+          Host: {{ inventory_hostname }}
+          {% if package_upgrade_lines | default([]) | length > 0 %}
+          Installed (vulnerable)              →  Upgrade target (fixed)
+          {% for line in package_upgrade_lines %}
+          {{ line }}
+          {% endfor %}
+          {% else %}
+          No CVE-targeted package updates listed on this host.
+          {% endif %}
+
     - name: Publish assessment data
       ansible.builtin.set_stats:
         data:
@@ -132,6 +213,9 @@
           reboot_required_for_fix: "{{ reboot_required_for_fix }}"
           cve_list: "{{ assessed_cve_list }}"
           packages_for_cve: "{{ cve_pkg_list_cmd.stdout_lines | default([]) }}"
+          package_upgrade_plan: "{{ package_upgrade_plan | default({}) }}"
+          package_upgrade_lines: "{{ package_upgrade_lines | default([]) }}"
+          package_exposure_report: "{{ package_exposure_report }}"
           sbom_before_path: "{{ sbom_before_path | default('/tmp/sbom-before.json') }}"
           assessment_timestamp: "{{ ansible_date_time.iso8601 }}"
         aggregate: false
@@ -148,7 +232,9 @@
           Patch available: {{ patch_available }}
           Reboot required for fix: {{ reboot_required_for_fix }}
           Triggered CVE: {{ triggered_cve | default('N/A') }} — {{ 'FIX AVAILABLE' if (triggered_cve_present | default(false) | bool) else 'not found' }}
-          SBOM captured: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
+          SBOM baseline file: {{ sbom_before_path | default('/tmp/sbom-before.json') }}
+
+          {{ package_exposure_report }}
 
     - name: Display assessment summary
       ansible.builtin.debug:

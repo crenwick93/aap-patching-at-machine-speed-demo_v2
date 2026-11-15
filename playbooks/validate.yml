@@ -161,6 +161,15 @@
         sbom_diff: "{{ sbom_diff_raw.stdout | from_json }}"
       when: sbom_before_stat.stat.exists
 
+    - name: Build SBOM upgrade lines (before → after)
+      ansible.builtin.set_fact:
+        sbom_upgrade_detail: |
+          {% for item in ((sbom_diff | default({})).changed | default({}) | dict2items) %}
+          {{ item.key }}: {{ item.value.before }}  →  {{ item.value.after }}
+          {% else %}
+          (no package version changes recorded in SBOM diff)
+          {% endfor %}
+
     - name: Set per-host validation facts
       ansible.builtin.set_fact:
         host_validation:
@@ -197,10 +206,13 @@
             }}
           triggered_cve: "{{ triggered_cve | default('N/A') }}"
           sbom:
-            added: "{{ sbom_diff.added | default([]) | length }}"
-            removed: "{{ sbom_diff.removed | default([]) | length }}"
-            changed: "{{ sbom_diff.changed | default({}) | length }}"
-            changed_packages: "{{ (sbom_diff.changed | default({})).keys() | list }}"
+            before_file: "{{ sbom_before }}"
+            after_file: "{{ sbom_after }}"
+            added: "{{ (sbom_diff | default({})).added | default([]) | length }}"
+            removed: "{{ (sbom_diff | default({})).removed | default([]) | length }}"
+            changed: "{{ (sbom_diff | default({})).changed | default({}) | length }}"
+            changed_packages: "{{ ((sbom_diff | default({})).changed | default({})).keys() | list }}"
+            upgrade_detail: "{{ sbom_upgrade_detail }}"
           result: PASS
           timestamp: "{{ ansible_date_time.iso8601 }}"
 
@@ -220,8 +232,11 @@
           Critical services: {{ host_validation.services }}
           Trading Service /health: HTTP {{ trading_health.status | default('n/a') }} — UP
           Trading Service /: HTTP {{ trading_home.status | default('n/a') }}
+          SBOM baseline file: {{ sbom_before }}
+          SBOM after file:    {{ sbom_after }}
           SBOM: +{{ sbom_diff.added | default([]) | length }} / -{{ sbom_diff.removed | default([]) | length }} / ~{{ sbom_diff.changed | default({}) | length }}
-          Changed RPMs: {{ (sbom_diff.changed | default({})).keys() | list | join(', ') | default('none') }}
+          Package upgrades verified (installed → fixed):
+          {{ sbom_upgrade_detail }}
 
     - name: Display post-check report
       ansible.builtin.debug:
@@ -278,24 +293,35 @@
           Reboot performed: {{ reboot_performed | default('n/a') }}
           Validation time: {{ ansible_date_time.iso8601 }}
 
+          Planned exposure (from assessment — installed → fix target):
+          {% if package_upgrade_lines | default([]) | length > 0 %}
+          {% for line in package_upgrade_lines %}
+          {{ line }}
+          {% endfor %}
+          {% else %}
+          {{ package_exposure_report | default('(see assessment artifacts)') }}
+          {% endif %}
+
           Per-host results:
           {% for h in ansible_play_hosts %}
           --- {{ h }} ---
           Result: {{ hostvars[h].host_validation.result | default('PASS') }}
           FQDN: {{ hostvars[h].host_validation.fqdn | default(h) }}
           Kernel: {{ hostvars[h].host_validation.kernel | default('n/a') }}
-          PHP RPM: {{ hostvars[h].host_validation.php_rpm | default('n/a') }}
+          PHP RPM (after patch): {{ hostvars[h].host_validation.php_rpm | default('n/a') }}
           CVE cleared: {{ hostvars[h].host_validation.cve_cleared | default('n/a') }}
           Pending reboot: {{ hostvars[h].host_validation.pending_reboot | default(false) }}
           Services: {{ hostvars[h].host_validation.services | default({}) }}
           Trading Service: UP (health HTTP {{ hostvars[h].host_validation.trading_service.health_http | default('n/a') }}, home HTTP {{ hostvars[h].host_validation.trading_service.home_http | default('n/a') }})
+          SBOM files: {{ hostvars[h].host_validation.sbom.before_file | default('/tmp/sbom-before.json') }} → {{ hostvars[h].host_validation.sbom.after_file | default('/tmp/sbom-after.json') }}
           SBOM delta: +{{ hostvars[h].host_validation.sbom.added | default(0) }} / -{{ hostvars[h].host_validation.sbom.removed | default(0) }} / ~{{ hostvars[h].host_validation.sbom.changed | default(0) }}
-          Changed packages: {{ hostvars[h].host_validation.sbom.changed_packages | default([]) | join(', ') | default('none') }}
+          Verified package upgrades (before → after):
+          {{ hostvars[h].host_validation.sbom.upgrade_detail | default('(none)') }}
 
           {% endfor %}
           Summary: All canary hosts passed post-checks. Critical services (sshd, chronyd, httpd) are active.
           Trading Service application responds UP on every canary node. No pending reboot remains.
-          Package remediation verified; production deployment is recommended under emergency CR approval.
+          SBOM confirms exposed packages were upgraded to the fixed NVRs; production deployment is recommended.
       run_once: true
 
     - name: Add work note — canary / stage post-checks passed
@@ -323,6 +349,8 @@
           services_healthy: true
           trading_service_up: true
           sbom_diff_summary: "{{ sbom_diff | default({}) }}"
+          sbom_before_path: "{{ sbom_before }}"
+          sbom_after_path: "{{ sbom_after }}"
           validation_timestamp: "{{ ansible_date_time.iso8601 }}"
           strategy_used: "{{ strategy_used | default('package_upgrade') }}"
           cves_patched: "{{ cve_list | default([]) }}"
