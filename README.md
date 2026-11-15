@@ -1,25 +1,27 @@
 # Full Patching at Machine Speed
 
-An end-to-end demo showing how Red Hat Ansible Automation Platform, Event-Driven Ansible, Red Hat Insights, and ServiceNow work together to detect, triage, and permanently remediate a critical kernel CVE across a fleet of RHEL systems — in minutes, not days.
+An end-to-end demo showing how Red Hat Ansible Automation Platform, Event-Driven Ansible, Red Hat Insights, and ServiceNow work together to detect, triage, and permanently remediate a critical package CVE across a fleet of RHEL systems — in minutes, not days.
 
-The workflow applies a CVE-targeted package upgrade (with security-update fallback) and a controlled reboot, staged as a canary-then-production deployment, with full ITIL governance and a complete ServiceNow audit trail.
+The workflow applies a CVE-targeted package upgrade (with security-update fallback), restarts affected services, and reboots **only when** `needs-restarting -r` requires it. Deployment is staged canary-then-production with full ITIL governance and a complete ServiceNow audit trail.
 
-> **Sibling demo:** For live kernel patching with zero reboot, see [`aap-patching-at-machine-speed-demo`](https://github.com/crenwick93/aap-patching-at-machine-speed-demo) (kpatch). This repo (`_v2`) is the permanent fix path: full package upgrade + reboot.
+The current demo story uses **PHP RCE CVE-2026-109618** (RHSA-2026:87151) — a userland fix that does **not** require a reboot. The same workflow handles kernel CVEs when reboot *is* required.
+
+> **Sibling demo:** For live kernel patching with zero reboot, see [`aap-patching-at-machine-speed-demo`](https://github.com/crenwick93/aap-patching-at-machine-speed-demo) (kpatch). This repo (`_v2`) is the permanent package-upgrade path.
 
 ## What the Demo Shows
 
-1. **Red Hat Insights** detects a critical kernel CVE on monitored RHEL systems
+1. **Red Hat Insights** detects a critical PHP CVE on monitored RHEL systems
 2. **Event-Driven Ansible** picks up the event and triggers an AAP workflow
 3. **AAP Workflow** runs a 10-step response:
    - Assess all systems and capture a Software Bill of Materials (SBOM)
    - Open ServiceNow Incidents (one per environment)
    - Pre-check system readiness
-   - Apply full package upgrade + reboot to dev (canary deployment)
-   - Validate the canary, then raise an Emergency Change Request
+   - Apply CVE-targeted package upgrade to dev (canary) — reboot only if required
+   - Validate the canary, then raise an Emergency Change Request (notes reboot impact)
    - **Pause for human approval** in ServiceNow
-   - Apply full package upgrade + reboot to production (after CR approval)
+   - Apply the same upgrade to production (after CR approval)
    - Post-checks, CMDB CI updates, SBOM diff
-   - Post-Implementation Review: resolve incidents, mark CVE as Resolved in Insights (no follow-up kernel CR — this *is* the permanent fix)
+   - Post-Implementation Review: resolve incidents, mark CVE as Resolved in Insights
 
 ## Architecture
 
@@ -42,8 +44,8 @@ Red Hat Insights  ──▶  Event-Driven Ansible  ──▶  AAP Workflow
                    └──────┬────────┘
                           ▼
                    ┌───────────────┐
-                   │ Canary: Dev   │──▶ dnf upgrade + reboot
-                   │ + Post-checks │
+                   │ Canary: Dev   │──▶ dnf upgrade --cve
+                   │ + Post-checks │    (+ reboot only if needed)
                    └──────┬────────┘
                           ▼
                    ┌───────────────┐
@@ -56,7 +58,7 @@ Red Hat Insights  ──▶  Event-Driven Ansible  ──▶  AAP Workflow
                    └──────┬────────┘
                           ▼
                    ┌───────────────┐
-                   │ Prod: patch   │──▶ dnf upgrade + reboot
+                   │ Prod: patch   │──▶ same upgrade path
                    │ + Post-checks │
                    └──────┬────────┘
                           ▼
@@ -83,7 +85,7 @@ Red Hat Insights  ──▶  Event-Driven Ansible  ──▶  AAP Workflow
 ├── playbooks/
 │   ├── assess.yml                 # Patch exposure + SBOM baseline
 │   ├── precheck.yml               # System readiness checks
-│   ├── patch.yml                  # CVE-targeted dnf upgrade + reboot
+│   ├── patch.yml                  # CVE-targeted dnf upgrade (+ conditional reboot)
 │   ├── validate.yml               # Post-checks, SBOM diff, CI updates
 │   ├── snow_open_incident.yml     # Create ServiceNow incidents
 │   ├── snow_open_cr.yml           # Create emergency change request
@@ -99,7 +101,7 @@ Red Hat Insights  ──▶  Event-Driven Ansible  ──▶  AAP Workflow
 │   └── scripts/
 │       └── cac-apply.sh           # Convenience wrapper for CaC apply
 ├── scripts/
-│   ├── reset-demo.sh              # Full demo reset (EC2 + Insights + AAP)
+│   ├── reset-demo.sh              # Full demo reset (EC2 + Insights + AAP + PHP seed)
 │   ├── simulate-cve-event.sh      # Simulate a Lightspeed CVE event
 │   ├── setup-servicenow-cis.sh    # Register CIs + services in ServiceNow
 │   ├── cleanup-servicenow.sh      # Remove demo records from ServiceNow
@@ -124,6 +126,7 @@ Distinct from the kpatch sibling so both demos can coexist on one AAP:
 | CR short_description filter | `Emergency full patch` |
 | Event stream | `Lightspeed CVE Events Full Patch token` |
 | Rulebook activation | `Full Patch CVE Response` |
+| Demo CVE | `CVE-2026-109618` / `RHSA-2026:87151` |
 
 ## Setup
 
@@ -216,6 +219,7 @@ This will:
 - Launch 6 fresh RHEL instances (3 dev, 3 prod)
 - Set hostnames via cloud-init
 - Register all nodes with Red Hat Subscription Manager and Insights
+- **Install PHP and downgrade to vulnerable NVR `8.0.30-6.el9_8`** so CVE-2026-109618 is present
 - Sync the AAP dynamic inventory (`AWS EC2 Discovery Full Patch`)
 - Update your local `/etc/hosts` for SSH shortcuts
 
@@ -233,7 +237,7 @@ Quick start:
 
 # 3. Watch the workflow in AAP > Jobs
 # 4. Approve the CR in ServiceNow when prompted
-# 5. Watch production deployment complete (includes reboot windows)
+# 5. Watch production deployment complete (no reboot for this PHP CVE)
 ```
 
 ## Resetting Between Demos
@@ -242,7 +246,7 @@ Quick start:
 # Clean ServiceNow records (incidents, CRs)
 ./scripts/cleanup-servicenow.sh --all
 
-# Full reset: reprovision EC2, re-register Insights, sync inventory
+# Full reset: reprovision EC2, re-register Insights, seed PHP, sync inventory
 ./scripts/reset-demo.sh
 
 # Re-apply CaC if AAP objects need updating
@@ -256,9 +260,9 @@ Quick start:
 | Workflow doesn't start after simulate script | Check EDA activation `Full Patch CVE Response` is running and event stream is not in test mode |
 | ServiceNow CR approval doesn't resume workflow | Check EDA rulebook is polling. Verify `remote_servicenow_timezone` matches your PDI. CR filter expects `Emergency full patch` |
 | Insights not showing all 6 systems | Run `sudo insights-client --status` on the missing node. If unregistered, run `sudo subscription-manager register --force` then `sudo insights-client --register` |
+| PHP CVE not showing / no packages to upgrade | Confirm `rpm -q php` is `php-8.0.30-6.el9_8`. Re-run reset or downgrade manually |
+| Prod patch fails on `kernel_before.stdout` | Fixed: do not register vars named `kernel_before`/`kernel_after` — workflow artifacts collide with register results |
 | SSH timeouts to nodes | Your public IP may have changed — update the AWS Security Group inbound rule for port 22 |
-| `xargs: command line cannot be assembled` during reset | The `.env` sourcing is using an old `xargs` method — pull latest and the `source` fix will resolve it |
-| Only 4-5 nodes register during reset | The parallel registration can race. The reset script retries failures automatically, but you may need to manually register stragglers |
 | Post-checks fail on Trading Service check | This check is simulated and always returns UP. If it fails, verify the node is reachable via SSH |
 | Host still needs reboot after patch | Confirm `needs-restarting -r` on the node; re-run post-checks after the reboot finishes |
 | EDA event stream in test mode after CaC | The CaC apply playbook includes a post-task to set all event streams to production mode. If it still reverts, manually toggle it in the EDA UI |

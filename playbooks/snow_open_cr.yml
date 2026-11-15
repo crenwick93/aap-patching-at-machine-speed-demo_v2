@@ -22,21 +22,23 @@
         type: emergency
         state: new
         short_description: >-
-          Emergency full patch — {{ advisory_id | default('RHSA-2026:25217') }}
-          ({{ cves_patched | default([]) | length }} CVEs) — production fleet
+          Emergency full patch — {{ advisory_id | default('RHSA-2026:87151') }}
+          ({{ cves_patched | default(cve_list | default([])) | length }} CVEs) — production fleet
         description: |
-          Red Hat Insights has detected a critical kernel vulnerability
-          ({{ advisory_id | default('RHSA-2026:25217') }}) affecting the
+          Red Hat Insights has detected a critical vulnerability
+          ({{ advisory_id | default('RHSA-2026:87151') }}) affecting the
           Trading Service production fleet.
 
           A canary deployment has been successfully completed across the
-          dev environment using a permanent package upgrade + reboot.
+          dev environment using a permanent CVE-targeted package upgrade.
           This CR requests approval to apply the identical remediation to production.
 
-          Advisory: {{ advisory_id | default('RHSA-2026:25217') }}
+          Advisory: {{ advisory_id | default('RHSA-2026:87151') }}
           Severity: {{ severity | default('Critical') }}
           Kernel (pre-prod): {{ kernel_version | default('unknown') }}
           CVEs: {{ cve_list | default([]) | join(', ') }}
+          Packages: {{ packages_for_cve | default([]) | join(', ') | default('see canary evidence') }}
+          Reboot required: {{ reboot_required_for_fix | default(false) }}
           Related Dev Incident: {{ inc_dev_number | default('N/A') }}
           Related Prod Incident: {{ inc_prod_number | default('N/A') }}
         priority: 1
@@ -49,14 +51,15 @@
           cmdb_ci: "{{ app_prod_lookup.records[0].sys_id | default(omit) }}"
           business_service: "{{ biz_svc_lookup.records[0].sys_id | default(omit) }}"
           justification: |
-            Red Hat Insights has identified {{ advisory_id | default('RHSA-2026:25217') }}
-            as a critical kernel vulnerability (CVSS 8.8) affecting all Trading Service
-            nodes. The vulnerability allows remote exploitation and must be remediated
-            immediately to maintain the security posture of the platform.
+            Red Hat Insights has identified {{ advisory_id | default('RHSA-2026:87151') }}
+            as a critical vulnerability affecting Trading Service nodes. The vulnerability
+            must be remediated immediately to maintain the security posture of the platform.
 
-            A canary full patch was successfully deployed to the dev environment:
+            A canary package upgrade was successfully deployed to the dev environment:
             - Dev hosts patched: rhel-dev-01, rhel-dev-02, rhel-dev-03
-            - Strategy: dnf security upgrade + reboot (permanent fix)
+            - Strategy: dnf upgrade --cve (permanent fix)
+            - Reboot required: {{ reboot_required_for_fix | default(false) }}
+            - Reboot performed on canary: {{ reboot_performed | default('see canary job') }}
             - Services healthy post-patch: {{ services_healthy | default('yes') }}
             - Trading Service service: UP across all dev nodes
             - SBOM diff: {{ sbom_diff_summary.added | default([]) | length }} RPMs added, {{ sbom_diff_summary.changed | default({}) | length }} RPMs changed
@@ -70,31 +73,33 @@
             Event-Driven Ansible will detect the state change and automatically resume
             the paused workflow to execute the following steps:
 
-            1. Apply package upgrades to production nodes (rhel-prod-01, rhel-prod-02, rhel-prod-03)
-               — includes a controlled reboot per host.
-            2. Run post-checks: verify no pending reboot, critical services healthy,
+            1. Apply CVE-targeted package upgrades to production nodes
+               (rhel-prod-01, rhel-prod-02, rhel-prod-03).
+            2. Restart affected services if needed.
+            3. Reboot only if needs-restarting reports a core-library requirement.
+               For this change, reboot required: {{ reboot_required_for_fix | default(false) }}.
+            4. Run post-checks: verify no pending reboot, critical services healthy,
                Trading Service responding on all production nodes.
-            3. Generate post-patch SBOM and compute diff against baseline.
-            4. Update CMDB Configuration Items with new kernel version.
-            5. Force Red Hat Insights check-in to confirm CVE remediation.
-            6. Resolve production incident and move this CR to Review.
+            5. Generate post-patch SBOM and compute diff against baseline.
+            6. Update CMDB Configuration Items.
+            7. Force Red Hat Insights check-in to confirm CVE remediation.
+            8. Resolve production incident and move this CR to Review.
 
-            Estimated duration: < 15 minutes from approval (includes reboot windows)
-            Service impact: brief per-host reboot during the change window
+            Estimated duration: < 15 minutes from approval
+            Service impact: {% if reboot_required_for_fix | default(false) | bool %}brief per-host reboot during the change window{% else %}no reboot expected — package upgrade and service restart only{% endif %}
           backout_plan: |
             If post-checks fail on any production node:
             1. Identify the last transaction: sudo dnf history list
             2. Roll back: sudo dnf history undo last
-            3. Reboot if the undo requires it: sudo reboot
+            3. Restart affected services (or reboot only if needs-restarting requires it)
             4. Verify services recover to healthy state.
             5. Escalate to platform engineering for manual investigation.
 
-            Note: undo restores the previous package set. A reboot may still be required
-            after rollback depending on which packages changed.
+            Note: undo restores the previous package set.
           test_plan: |
             Automated post-checks will verify:
             1. needs-restarting -r reports no pending reboot.
-            2. Triggered CVE is no longer outstanding in dnf updateinfo.
+            2. Triggered CVE has no outstanding package updates (dnf check-update --cve).
             3. Critical services (sshd, chronyd) are running.
             4. Trading Service service health endpoint responds on each node.
             5. Post-patch SBOM is generated and diffed against pre-patch baseline.
@@ -118,7 +123,8 @@
         other:
           work_notes: >-
             Dev canary deployment completed successfully.
-            Emergency CR {{ cr_result.record.number }} raised for production full patch + reboot.
+            Emergency CR {{ cr_result.record.number }} raised for production package upgrade
+            (reboot required: {{ reboot_required_for_fix | default(false) }}).
       when: inc_dev_sys_id is defined
 
     - name: Update Prod Incident with CR reference
@@ -126,7 +132,8 @@
         sys_id: "{{ inc_prod_sys_id }}"
         other:
           work_notes: >-
-            Emergency CR {{ cr_result.record.number }} raised for production full patch + reboot.
+            Emergency CR {{ cr_result.record.number }} raised for production package upgrade
+            (reboot required: {{ reboot_required_for_fix | default(false) }}).
             Dev canary passed — awaiting CAB approval before production remediation.
       when: inc_prod_sys_id is defined
 
@@ -138,7 +145,8 @@
           Sys ID: {{ cr_result.record.sys_id }}
           Linked to Incident: {{ inc_dev_number | default('N/A') }}
           Dev canary: PASSED
-          Awaiting approval for production full patch + reboot.
+          Reboot required: {{ reboot_required_for_fix | default(false) }}
+          Awaiting approval for production package upgrade.
 
     - name: Publish CR identifiers
       ansible.builtin.set_stats:

@@ -2,7 +2,7 @@
 
 This is a guided walkthrough for delivering the demo. Each section is a beat in the narrative. Open the tabs/windows listed before you start so transitions are smooth.
 
-> **Sibling note:** The kpatch (zero-reboot) runbook lives in `aap-patching-at-machine-speed-demo`. This runbook is the permanent-fix path: package upgrade + reboot.
+> **Sibling note:** The kpatch (zero-reboot) runbook lives in `aap-patching-at-machine-speed-demo`. This runbook is the permanent package-upgrade path. The story CVE is **PHP RCE CVE-2026-109618** — reboot is assessed as **not required**, and Apply Patch skips reboot accordingly.
 
 ---
 
@@ -23,7 +23,7 @@ Have these open and ready:
 
 Make sure the demo has been reset (`scripts/reset-demo.sh`), ServiceNow is clean (`scripts/cleanup-servicenow.sh --all`), and the EDA rulebook activation **Full Patch CVE Response** is running.
 
-The reset script automatically updates `/etc/hosts` with the current IPs for `rhel-dev-01` and `rhel-prod-01`, so you can SSH using their FQDNs:
+The reset script seeds vulnerable PHP (`8.0.30-6.el9_8`) and updates `/etc/hosts`:
 
 ```bash
 ssh -i patching-demo.pem ec2-user@rhel-dev-01.trading-demo.chrislab.dev
@@ -54,8 +54,8 @@ ssh -i patching-demo.pem ec2-user@rhel-prod-01.trading-demo.chrislab.dev
 ### 1.3 — Show the vulnerability in Insights
 
 - Navigate to **Vulnerabilities** in Insights
-  - Find a kernel-related CVE on one of the nodes
-  - Click into it to show the severity, CVSS score, affected systems
+  - Find [CVE-2026-109618](https://console.redhat.com/insights/vulnerability/cves/CVE-2026-109618)
+  - Click into it: Important, CVSS 8.1, **known exploit**, PHP RCE
   - "This CVE affects our trading platform nodes. In a traditional workflow, someone would notice this, raise a ticket, schedule a maintenance window... that could take days or weeks."
 
 ### 1.4 — Prove it on the node itself
@@ -63,21 +63,15 @@ ssh -i patching-demo.pem ec2-user@rhel-prod-01.trading-demo.chrislab.dev
 - Switch to the **Terminal** (SSH into `rhel-dev-01.trading-demo.chrislab.dev`)
 
 ```bash
-# Confirm which node we're on (matches the display name in Insights)
 hostname
-
-# Show the running kernel
-uname -r
-
-# Show the specific CVE is present
-sudo dnf updateinfo info --security kernel 2>/dev/null | grep -A2 "CVE-2026-43037"
-
-# Confirm a reboot would be needed once packages are updated
+rpm -q php
+sudo dnf updateinfo info --cve CVE-2026-109618 2>/dev/null | head -30
 sudo needs-restarting -r; echo "exit=$?"
 ```
 
-- "This is `rhel-dev-01.trading-demo.chrislab.dev` — the same system you just saw in Insights. Same hostname, same node."
-- "The CVE is right there — CVE-2026-43037, CVSS 8.8, sitting unpatched. The permanent fix is a package upgrade that requires a reboot to take effect."
+- "This is `rhel-dev-01` — same system you just saw in Insights."
+- "PHP is sitting on a vulnerable build — `php-8.0.30-6.el9_8`. RHSA-2026:87151 is outstanding."
+- "And notice: `needs-restarting -r` is clean. This is a userland package — we can remediate without a reboot."
 
 ---
 
@@ -97,18 +91,18 @@ sudo needs-restarting -r; echo "exit=$?"
 
 - Switch to **AAP — Templates > Trading Service: CVE Full Patch Response**
   - Open the **Visualizer**
-  - Walk through the 10 nodes left to right:
-    1. **Assess & SBOM Baseline** — "First, we scan every node. Kernel version, outstanding CVEs, whether a package update is available, and capture a Software Bill of Materials."
-    2. **Open Incident** — "Only after assessment do we raise ServiceNow incidents — one for Dev, one for Prod — with the actual findings baked in."
-    3. **Pre-check All Hosts** — "Safety checks. Disk space, memory, critical services running, no unexpected pending reboot. Make sure it's safe to patch."
-    4. **Canary: Apply Full Patch** — "Dev goes first. CVE-targeted `dnf` upgrade, then a controlled reboot so the fix is active."
-    5. **Canary: Post-checks** — "Validate the canary: no pending reboot, CVE cleared from advisories, services healthy, SBOM diff captured."
-    6. **Open Emergency CR** — "Dev succeeded, so now we raise an emergency Change Request for production. Full ITIL justification, implementation plan, backout plan — including the expected reboot window."
-    7. **Awaiting CR Approval** — "The workflow pauses here. It will not touch production until a human approves the CR in ServiceNow."
-    8. **Apply Full Patch (Prod)** — "Once approved, production gets the same package upgrade + reboot."
-    9. **Post-checks (Prod)** — "Same validation on production nodes."
-    10. **Post-Implementation Review** — "Close out the ITIL records — resolve both incidents, move the CR to review, and mark the CVE as Resolved in Insights. No follow-up kernel CR — this remediation *is* the permanent fix."
-  - "So the key thing here — dev is fully automated. Production has a governance gate. The human only needs to make one decision: approve or reject the Change Request. And unlike a live kpatch stop-gap, when this finishes the CVE is permanently remediated."
+  - Walk through the nodes left to right:
+    1. **Assess & SBOM Baseline** — "Scan every node: outstanding CVEs, whether a package update is available, whether a reboot will be required, and capture an SBOM."
+    2. **Open Incident** — "Raise ServiceNow incidents for Dev and Prod with the assessment findings baked in."
+    3. **Pre-check All Hosts** — "Safety checks before we touch anything."
+    4. **Canary: Apply Patch** — "Dev goes first. CVE-targeted `dnf` upgrade, restart affected services, reboot **only if** `needs-restarting` says so."
+    5. **Canary: Post-checks** — "Validate the canary: CVE cleared, no pending reboot, services healthy, SBOM diff."
+    6. **Open Emergency CR** — "Dev succeeded — raise an emergency CR for production. For this PHP CVE, the CR explicitly says reboot is **not** required."
+    7. **Awaiting CR Approval** — "Workflow pauses until a human approves in ServiceNow."
+    8. **Apply Patch (Prod)** — "Same upgrade path on production."
+    9. **Post-checks (Prod)** — "Same validation on production."
+    10. **Post-Implementation Review** — "Resolve incidents, move CR to review, mark CVE Resolved in Insights."
+  - "Dev is fully automated. Production has a governance gate. One human decision: approve or reject the Change Request."
 
 ---
 
@@ -124,71 +118,62 @@ sudo needs-restarting -r; echo "exit=$?"
 ./scripts/simulate-cve-event.sh
 ```
 
-- The script will echo the payload details — pause here and talk through it:
-  - "This is a Critical CVE, CVSS 8.8, detected on rhel-dev-01"
+- Pause and talk through the payload:
+  - "Critical/Important CVE, CVSS 8.1, known exploit, detected on rhel-dev-01"
   - "Insights has sent this event to Event-Driven Ansible"
-  - "EDA is now going to trigger our entire response workflow — no human intervention needed to start the process"
+  - "EDA triggers our entire response workflow — no human intervention to start"
 
 ### 3.2 — Show the workflow kick off
 
 - Switch to **AAP — Workflow Jobs**
   - A new "Trading Service: CVE Full Patch Response" workflow should appear within seconds
   - Click into it to show the **Visualizer**
-  - "You can see it's already executing the same 10-node workflow we just walked through."
 
 ---
 
 ## Act 4: The Automated Response
 
-**Narrative:** Walk through each phase as it executes. Dev canary includes a reboot, so expect a short wait — use the time to explain what each step is doing.
+**Narrative:** Walk through each phase as it executes. For PHP there is no reboot wait — use the time to explain assess vs patch decisions.
 
 ### 4.1 — Assess & SBOM Baseline
 
-- Watch "Assess & SBOM Baseline" complete in the **Workflow Visualizer**
-- "It's already scanned all 6 nodes and captured the baseline. Now it knows exactly what's exposed and that a reboot will be required for the permanent fix."
+- Watch "Assess & SBOM Baseline" complete
+- "It's scanned all 6 nodes. Patch available: yes. Reboot required for fix: **false**."
 
 ### 4.2 — Open Incident
 
 - As soon as "Open Incident" completes, switch to **ServiceNow**
-- Show the **Dev service** — a new Incident has appeared
-  - "Now that we know which machines are exposed, the automation opens an incident with the full assessment findings baked in. Not a generic alert — it contains the kernel version, CVE list, reboot-required flag, and SBOM confirmation."
-- Show the **Prod service** — another Incident
-  - "Both environments get their own incident — proper ITIL governance."
-- Once complete, go to **ServiceNow** and check the dev incident's **Work Notes**
-  - "See? The automation has written the assessment findings directly into the incident. Every node, kernel version, CVE count — full transparency."
+- Show Dev and Prod incidents with assessment findings (CVE list, reboot required: false)
+- Show work notes — full transparency into what the automation found
 
 ### 4.3 — Pre-checks & Dev Canary
 
-- "Pre-checks confirm it's safe to patch — disk space, memory, services all healthy."
-- "Now watch — it's applying the full package upgrade to dev first, then rebooting. This is our canary. Brief reboot window per host, permanent fix."
+- "Pre-checks confirm it's safe to patch."
+- "Now it's applying the CVE-targeted package upgrade to dev. No reboot expected for PHP."
 - After "Canary: Post-checks" completes:
-  - "Post-checks confirmed: no pending reboot, CVE cleared from outstanding advisories, all services healthy, Trading Service is UP. SBOM diff captured — we know exactly what changed."
+  - "CVE cleared from outstanding updates, services healthy, Trading Service UP, SBOM diff captured."
 
 ### 4.4 — Open Emergency CR + Approval
 
-- The workflow reaches **"Open Emergency CR"** then pauses at **"Awaiting CR Approval"**
+- Workflow reaches **"Open Emergency CR"** then pauses at **"Awaiting CR Approval"**
 - Switch to **ServiceNow**
-  - Show the new **Change Request** — it's an emergency CR (`Emergency full patch …`)
-  - "The automation has raised a governed change request. Dev canary passed, but production needs human approval. This is the governance gate — and the CR already documents the reboot impact."
-  - Show the CR details — linked to the Trading Service, canary evidence in the description
-- **Approve the CR** in ServiceNow and click **Implement**
-  - "The moment we approve and implement, EDA picks up the state change and automatically approves the paused workflow node in AAP."
-- Switch back to **AAP** — the workflow should resume within ~10 seconds
+  - Show the emergency CR (`Emergency full patch …`)
+  - Call out the implementation plan: **no reboot expected — package upgrade and service restart only**
+  - "Governance gate: production waits for a human."
+- **Approve the CR** and click **Implement**
+- Switch back to **AAP** — workflow resumes within ~10 seconds
 
 ### 4.5 — Production Deployment
 
-- "Now it's applying the same full patch + reboot to production — governed, approved, audited."
-- Watch "Apply Full Patch (Prod)" and "Post-checks (Prod)" complete
-  - "Same post-checks on prod — no pending reboot, services healthy, Trading Service UP."
+- "Same package upgrade on production — governed, approved, audited. Still no reboot."
+- Watch "Apply Patch (Prod)" and "Post-checks (Prod)" complete
 
 ### 4.6 — Post-Implementation Review
 
-- The final node runs
 - Switch to **ServiceNow**:
-  - **Dev Incident** — resolved, work notes show the full timeline
-  - **Prod Incident** — resolved, same audit trail
-  - **Emergency CR** — moved to Review, detailed review notes with SBOM diff
-  - **No follow-up CR** — "Unlike a live kpatch mitigation, this *is* the permanent fix. The automation does not schedule a second kernel change — the package upgrade and reboot already completed the remediation."
+  - Dev + Prod incidents resolved
+  - Emergency CR moved to Review
+  - No follow-up CR — this *is* the permanent fix
 
 ---
 
@@ -198,56 +183,37 @@ sudo needs-restarting -r; echo "exit=$?"
 
 ### 5.1 — Prove it on the node
 
-- SSH back into `rhel-dev-01.trading-demo.chrislab.dev`
-
 ```bash
-# Kernel may have changed after the upgrade + reboot
-uname -r
-
-# No pending reboot remaining
+rpm -q php
+sudo dnf check-update --cve CVE-2026-109618; echo "exit=$?"
 sudo needs-restarting -r; echo "exit=$?"
-
-# CVE should no longer appear in outstanding kernel advisories
-sudo dnf updateinfo info --security kernel 2>/dev/null | grep -A2 "CVE-2026-43037" || echo "CVE cleared from outstanding advisories"
 ```
 
-- "Before the workflow, that CVE was sitting in `dnf updateinfo`. Now it's gone from the outstanding advisories, and `needs-restarting -r` is clean — the reboot already activated the fix."
-- "This is a permanent remediation: packages updated, systems rebooted, vulnerability closed."
+- "Before: `php-8.0.30-6.el9_8`. After: patched build from RHSA-2026:87151."
+- "`dnf check-update --cve` is clean. No reboot was needed."
 
 ### 5.2 — Insights resolution
 
 - Navigate to **Red Hat Insights — Vulnerabilities** and refresh
-- "Notice the CVE status has been updated to **Resolved** for the demo systems. The Post-Implementation Review step didn't just close out ServiceNow — it called the Red Hat Insights API (`status_id: 4`) to mark the CVE as Resolved."
-- "That matters for two reasons:"
-  1. "It stops Insights from re-firing vulnerability events for this CVE — no duplicate workflows."
-  2. "It gives your security team an accurate picture: the vulnerability is permanently remediated, not temporarily mitigated."
-- Show the incident work notes — they include the Insights status update confirmation
-- "Because the RPM set actually changed, Insights scanners will also clear the advisory as they re-check. The API status update closes the loop immediately so the SOC isn't waiting on the next scan cycle."
+- "CVE status updated to **Resolved** via the Insights API in PIR — stops duplicate events, gives SOC an accurate picture."
 
 ### 5.3 — The full audit trail
 
-- Walk through ServiceNow:
-  - **Incidents**: Dev and Prod — both resolved with detailed work notes showing the full timeline
-  - **Emergency CR**: In Review state — ready for human sign-off
-  - **Follow-up CR**: none — permanent fix already applied
-- "Every step from detection to resolution, including the Insights API update, is documented in ServiceNow. This is a complete ITIL audit trail, generated automatically."
+- Walk through ServiceNow incidents + CR
+- "Every step from detection to resolution is documented automatically."
 
 ---
 
 ## Key Talking Points
 
-Use these throughout the demo as the workflow progresses:
-
 - **Speed**: "From CVE detection to full remediation across 6 nodes — minutes, not days."
-- **Permanent fix**: "Package upgrade + reboot is the lasting remediation. No temporary mitigation, no second change request for the 'real' kernel update."
-- **Controlled reboot**: "We accept a brief, orchestrated reboot window per host — planned, audited, and staged canary-first."
-- **Governance**: "Every step is audited. Incidents, change requests, SBOM diffs, work notes — all automated, all ITIL-compliant."
-- **Dev-first canary**: "We never touch production without proving it works on dev first — including surviving the reboot."
-- **Human in the loop**: "Production deployment requires an approved change request. The automation pauses and waits — governance is not optional."
-- **SBOM**: "We capture a full Software Bill of Materials before and after every patch. You know exactly what changed on every system."
-- **Insights closed-loop**: "The automation doesn't just patch — it tells Red Hat Insights the CVE is Resolved. No duplicate events, no manual status updates, no noise for the SOC team."
-  - **If asked "how is this different from kpatch?":** "Kpatch patches the running kernel in memory without a reboot — great for immediate risk reduction, but Insights OVAL still sees the old RPM until you do a full update. This workflow changes the packages and reboots, so the fix is permanent and the scanner path clears naturally. We also mark Insights Resolved immediately so operations doesn't wait on the next check-in."
-- **Scale**: "This same workflow works whether you have 6 nodes or 6,000. The only thing that changes is how many hosts Ansible targets."
+- **One path, many CVEs**: "Same workflow for PHP, openssl, kernel — reboot only when `needs-restarting` says so."
+- **Honest change risk**: "The CR told the approver reboot was not required. That matched what Apply Patch actually did."
+- **Permanent fix**: "Package upgrade is the lasting remediation. No temporary mitigation, no second CR."
+- **Governance**: "Dev automated; production paused for CAB approval."
+- **SBOM**: "Before/after bill of materials on every host."
+- **Insights closed-loop**: "Automation marks the CVE Resolved so the SOC isn't waiting on the next scan."
+- **If asked about kpatch:** "Kpatch is the zero-reboot stop-gap for kernel. This workflow is the permanent package fix — and for userland CVEs like PHP, there was never a reboot to avoid."
 
 ---
 
@@ -256,24 +222,18 @@ Use these throughout the demo as the workflow progresses:
 | Issue | Fix |
 |-------|-----|
 | Workflow doesn't start after simulate script | Check EDA activation `Full Patch CVE Response` is running and event stream is not in test mode |
-| ServiceNow CR approval doesn't resume workflow | Check EDA rulebook is polling (look at EDA audit logs). Verify `remote_servicenow_timezone` matches your PDI. Filter expects `Emergency full patch` |
-| Insights not showing systems | Run `sudo insights-client --status` on a node. If not reporting, run `sudo insights-client` to force upload |
-| SSH timeouts to nodes | Your local IP may have changed — update the AWS Security Group |
-| Post-checks fail on Trading Service service check | This is simulated and always returns UP. If it fails, check the node is reachable |
-| Host still reports pending reboot | Wait for reboot to finish, then re-check `needs-restarting -r` |
-| Wrong fleet / colliding with kpatch demo | Confirm EC2 tag `demo=patching-full` and inventory `Full Patching Demo` |
+| ServiceNow CR approval doesn't resume workflow | Check EDA rulebook is polling. Filter expects `Emergency full patch` |
+| PHP not vulnerable on node | Confirm `rpm -q php` shows `8.0.30-6.el9_8`; re-run `./scripts/reset-demo.sh` |
+| Prod job fails on `.stdout` for kernel_before | Fixed in current `patch.yml` — register vars renamed to avoid workflow artifact collision |
+| Insights not showing systems | Force `sudo insights-client` on the node |
+| Wrong fleet / colliding with kpatch demo | Confirm EC2 tag `demo=patching-full` |
 
 ---
 
 ## Reset for Next Demo
 
 ```bash
-# Clean ServiceNow records
 ./scripts/cleanup-servicenow.sh --all
-
-# Reprovision fresh EC2 instances (full reset)
 ./scripts/reset-demo.sh
-
-# Re-run CaC if needed
 source .env && ansible-playbook ansible_deployment/cac/apply.yml
 ```

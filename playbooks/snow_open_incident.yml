@@ -32,22 +32,23 @@
         impact: high
         urgency: high
         short_description: >-
-          Critical kernel CVE detected — {{ advisory_id | default('RHSA-2026:25217') }}
+          Critical CVE detected — {{ advisory_id | default('RHSA-2026:87151') }}
           affecting Trading Service (Dev)
         description: |
-          Red Hat Insights detected a critical kernel security advisory
+          Red Hat Insights detected a critical security advisory
           affecting the Trading Service Dev environment.
 
-          Advisory: {{ advisory_id | default('RHSA-2026:25217') }}
+          Advisory: {{ advisory_id | default('RHSA-2026:87151') }}
           Severity: {{ severity | default('Critical') }}
-          Synopsis: {{ synopsis | default('Important: kernel security update') }}
+          Synopsis: {{ synopsis | default('Important: security update') }}
           Trigger host: {{ affected_host | default('N/A') }}
 
           --- Assessment Findings ---
           Kernel: {{ kernel_version | default('unknown') }}
           Patch available: {{ patch_available | default('unknown') }}
-          Reboot required: {{ reboot_required_for_fix | default(true) }}
-          Kernel CVEs found: {{ cve_list | default([]) | join(', ') | default('none') }}
+          Reboot required: {{ reboot_required_for_fix | default(false) }}
+          Related CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
+          Packages: {{ packages_for_cve | default([]) | join(', ') | default('see assessment') }}
           Pre-patch SBOM captured: Yes
 
           Affected hosts:
@@ -71,22 +72,23 @@
         impact: high
         urgency: high
         short_description: >-
-          Critical kernel CVE detected — {{ advisory_id | default('RHSA-2026:25217') }}
+          Critical CVE detected — {{ advisory_id | default('RHSA-2026:87151') }}
           affecting Trading Service (Prod)
         description: |
-          Red Hat Insights detected a critical kernel security advisory
+          Red Hat Insights detected a critical security advisory
           affecting the Trading Service Prod environment.
 
-          Advisory: {{ advisory_id | default('RHSA-2026:25217') }}
+          Advisory: {{ advisory_id | default('RHSA-2026:87151') }}
           Severity: {{ severity | default('Critical') }}
-          Synopsis: {{ synopsis | default('Important: kernel security update') }}
+          Synopsis: {{ synopsis | default('Important: security update') }}
           Trigger host: {{ affected_host | default('N/A') }}
 
           --- Assessment Findings ---
           Kernel: {{ kernel_version | default('unknown') }}
           Patch available: {{ patch_available | default('unknown') }}
-          Reboot required: {{ reboot_required_for_fix | default(true) }}
-          Kernel CVEs found: {{ cve_list | default([]) | join(', ') | default('none') }}
+          Reboot required: {{ reboot_required_for_fix | default(false) }}
+          Related CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
+          Packages: {{ packages_for_cve | default([]) | join(', ') | default('see assessment') }}
           Pre-patch SBOM captured: Yes
 
           Affected hosts:
@@ -111,15 +113,17 @@
         state: 2
         other:
           work_notes: |
-            [AUTOMATED] Kernel exposure assessment complete.
+            [AUTOMATED] Patch exposure assessment complete.
 
             Kernel: {{ kernel_version | default('unknown') }}
             Patch available: {{ patch_available | default('unknown') }}
-            Reboot required for fix: {{ reboot_required_for_fix | default(true) }}
-            Outstanding kernel CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
+            Reboot required for fix: {{ reboot_required_for_fix | default(false) }}
+            Related CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
+            Packages: {{ packages_for_cve | default([]) | join(', ') | default('see assessment') }}
             Pre-patch SBOM captured on all hosts.
 
-            Proceeding with dev canary full patch + reboot deployment.
+            Proceeding with dev canary package upgrade
+            {% if reboot_required_for_fix | default(false) | bool %}(reboot expected){% else %}(no reboot expected){% endif %}.
 
     - name: Add assessment work notes to Prod Incident
       servicenow.itsm.incident:
@@ -127,12 +131,13 @@
         state: 2
         other:
           work_notes: |
-            [AUTOMATED] Kernel exposure assessment complete.
+            [AUTOMATED] Patch exposure assessment complete.
 
             Kernel: {{ kernel_version | default('unknown') }}
             Patch available: {{ patch_available | default('unknown') }}
-            Reboot required for fix: {{ reboot_required_for_fix | default(true) }}
-            Outstanding kernel CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
+            Reboot required for fix: {{ reboot_required_for_fix | default(false) }}
+            Related CVEs: {{ cve_list | default([]) | join(', ') | default('none') }}
+            Packages: {{ packages_for_cve | default([]) | join(', ') | default('see assessment') }}
             Pre-patch SBOM captured on all hosts.
 
             Awaiting dev canary result before proceeding.
@@ -145,6 +150,7 @@
           Dev:  {{ inc_dev_result.record.number }} ({{ inc_dev_result.record.sys_id }})
           Prod: {{ inc_prod_result.record.number }} ({{ inc_prod_result.record.sys_id }})
           Priority: {{ inc_dev_result.record.priority }}
+          Reboot required: {{ reboot_required_for_fix | default(false) }}
           Awaiting triage by AAP workflow.
 
     - name: Publish Incident identifiers

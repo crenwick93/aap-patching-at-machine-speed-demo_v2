@@ -11,40 +11,41 @@
   tasks:
     - name: Verify kernel is running
       ansible.builtin.command: uname -r
-      register: running_kernel
+      register: running_kernel_cmd
       changed_when: false
 
     - name: Confirm no pending reboot after patching
       ansible.builtin.command: needs-restarting -r
-      register: reboot_check
+      register: reboot_check_cmd
       changed_when: false
       failed_when: false
 
     - name: Assert system does not need another reboot
       ansible.builtin.assert:
         that:
-          - reboot_check.rc == 0
+          - reboot_check_cmd.rc == 0
         fail_msg: "Host {{ inventory_hostname }} still requires a reboot after patching"
         success_msg: "No pending reboot on {{ inventory_hostname }}"
 
     - name: Verify triggered CVE is no longer outstanding (best effort)
-      ansible.builtin.shell: >
-        dnf updateinfo info --security kernel 2>/dev/null | grep -oP 'CVE-\d{4}-\d+' | sort -u
-      register: remaining_cves
+      ansible.builtin.command: >
+        dnf check-update --cve {{ triggered_cve }}
+      register: remaining_cve_check
       changed_when: false
       failed_when: false
       when: triggered_cve is defined and triggered_cve | length > 0
 
-    - name: Assert triggered CVE cleared from outstanding kernel advisories
+    - name: Assert triggered CVE has no remaining package updates
       ansible.builtin.assert:
         that:
-          - triggered_cve not in (remaining_cves.stdout_lines | default([]))
-        fail_msg: "{{ triggered_cve }} is still listed in outstanding kernel advisories"
-        success_msg: "{{ triggered_cve }} is no longer outstanding on {{ inventory_hostname }}"
+          # dnf check-update returns 0 when nothing to do / no matching updates
+          - (remaining_cve_check.rc | default(0)) == 0
+        fail_msg: "{{ triggered_cve }} still has outstanding package updates on {{ inventory_hostname }}"
+        success_msg: "{{ triggered_cve }} has no outstanding package updates on {{ inventory_hostname }}"
       when:
         - triggered_cve is defined
         - triggered_cve | length > 0
-        - remaining_cves is succeeded
+        - remaining_cve_check is not skipped
 
     - name: Check critical services post-patch
       ansible.builtin.systemd:
@@ -137,12 +138,14 @@
     - name: Build post-check report
       ansible.builtin.set_fact:
         postcheck_report: |
-          === Post-check Report (Full Patch) ===
+          === Post-check Report (Package Patch) ===
           Host: {{ inventory_hostname }}
           Timestamp: {{ ansible_date_time.iso8601 }}
-          Kernel: {{ running_kernel.stdout }}
+          Kernel: {{ running_kernel_cmd.stdout }}
           Pending reboot: no
-          Strategy: full_patch_reboot
+          Reboot was required: {{ reboot_required | default(reboot_required_for_fix | default('n/a')) }}
+          Reboot performed: {{ reboot_performed | default('n/a') }}
+          Strategy: {{ strategy_used | default('package_upgrade') }}
           Trading Service service: UP
           Critical services: all healthy
           SBOM packages before: {{ sbom_diff.total_before | default('N/A') }}
@@ -155,13 +158,13 @@
       ansible.builtin.debug:
         msg: "{{ postcheck_report }}"
 
-    - name: Update CI kernel version in ServiceNow CMDB
+    - name: Update CI OS version in ServiceNow CMDB
       servicenow.itsm.configuration_item:
         sys_id: "{{ ci_sys_id }}"
         other:
-          os_version: "RHEL 9 — kernel {{ running_kernel.stdout }}"
+          os_version: "RHEL 9 — kernel {{ running_kernel_cmd.stdout }}"
           short_description: >-
-            RHEL 9 demo node — full-patched {{ ansible_date_time.date }}
+            RHEL 9 demo node — patched {{ ansible_date_time.date }}
       when: ci_sys_id is defined
       delegate_to: localhost
 
@@ -173,13 +176,13 @@
       when: ci_sys_id is not defined
       delegate_to: localhost
 
-    - name: Update CI kernel version by name lookup
+    - name: Update CI OS version by name lookup
       servicenow.itsm.configuration_item:
         sys_id: "{{ ci_by_name.records[0].sys_id }}"
         other:
-          os_version: "RHEL 9 — kernel {{ running_kernel.stdout }}"
+          os_version: "RHEL 9 — kernel {{ running_kernel_cmd.stdout }}"
           short_description: >-
-            RHEL 9 demo node — full-patched {{ ansible_date_time.date }}
+            RHEL 9 demo node — patched {{ ansible_date_time.date }}
       when:
         - ci_sys_id is not defined
         - ci_by_name.records | default([]) | length > 0
@@ -200,8 +203,9 @@
             [AUTOMATED] Dev canary post-checks PASSED.
 
             All services healthy. Trading Service: UP.
-            Kernel: {{ running_kernel.stdout }}
+            Kernel: {{ running_kernel_cmd.stdout }}
             Pending reboot: none
+            Reboot performed during patch: {{ reboot_performed | default('n/a') }}
             SBOM diff: {{ sbom_diff.added | default([]) | length }} RPMs added,
             {{ sbom_diff.changed | default({}) | length }} RPMs changed.
 
@@ -221,11 +225,12 @@
             [AUTOMATED] Production post-checks PASSED.
 
             All services healthy. Trading Service: UP.
-            Kernel: {{ running_kernel.stdout }}
+            Kernel: {{ running_kernel_cmd.stdout }}
             Pending reboot: none
+            Reboot performed during patch: {{ reboot_performed | default('n/a') }}
             SBOM diff: {{ sbom_diff.added | default([]) | length }} RPMs added,
             {{ sbom_diff.changed | default({}) | length }} RPMs changed.
-            CMDB CIs updated with new kernel version.
+            CMDB CIs updated.
 
             Proceeding to Post-Implementation Review.
       delegate_to: localhost
@@ -242,7 +247,8 @@
           services_healthy: true
           sbom_diff_summary: "{{ sbom_diff | default({}) }}"
           validation_timestamp: "{{ ansible_date_time.iso8601 }}"
-          strategy_used: "{{ strategy_used | default('full_patch_reboot') }}"
+          strategy_used: "{{ strategy_used | default('package_upgrade') }}"
           cves_patched: "{{ cve_list | default([]) }}"
-          kernel_after: "{{ running_kernel.stdout }}"
+          kernel_after: "{{ running_kernel_cmd.stdout }}"
+          reboot_performed: "{{ reboot_performed | default(false) }}"
         aggregate: false

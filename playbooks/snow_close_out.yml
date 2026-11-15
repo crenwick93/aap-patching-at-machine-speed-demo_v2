@@ -11,10 +11,11 @@
           [AUTOMATED] Post-Implementation Review
 
           All post-checks passed across patched hosts.
-          Strategy: {{ strategy_used | default('full_patch_reboot') }}
+          Strategy: {{ strategy_used | default('package_upgrade') }}
           Services healthy: {{ services_healthy | default('yes') }}
           Trading Service: UP
           Kernel after: {{ kernel_after | default('see host reports') }}
+          Reboot performed: {{ reboot_performed | default('n/a') }}
 
           SBOM Diff Summary:
           - Packages added: {{ sbom_diff_summary.added | default([]) | length }}
@@ -43,8 +44,9 @@
         state: resolved
         close_code: "Solved (Permanently)"
         close_notes: >-
-          Dev canary full patch + reboot validated successfully. All dev services healthy.
+          Dev canary package upgrade validated successfully. All dev services healthy.
           Trading Service confirmed UP. CIs updated in CMDB.
+          Reboot performed: {{ reboot_performed | default('n/a') }}.
       when: inc_dev_sys_id is defined and inc_dev_sys_id | length > 0
 
     - name: Resolve Prod Incident
@@ -53,8 +55,9 @@
         state: resolved
         close_code: "Solved (Permanently)"
         close_notes: >-
-          Production full patch + reboot validated successfully. All production services healthy.
-          Trading Service confirmed UP. CIs updated in CMDB. Permanent fix applied — no follow-up kernel CR required.
+          Production package upgrade validated successfully. All production services healthy.
+          Trading Service confirmed UP. CIs updated in CMDB. Permanent fix applied —
+          no follow-up CR required. Reboot performed: {{ reboot_performed | default('n/a') }}.
       when: inc_prod_sys_id is defined and inc_prod_sys_id | length > 0
 
     - name: Get Red Hat SSO access token (Lightspeed service account)
@@ -98,12 +101,13 @@
           Content-Type: application/vnd.api+json
         body_format: json
         body:
-          cve: "{{ triggered_cve | default('CVE-2026-43037') }}"
+          cve: "{{ triggered_cve | default('CVE-2026-109618') }}"
           inventory_id: "{{ insights_inventory_ids }}"
           status_id: 4
           status_text: >-
-            Permanently remediated via package upgrade + reboot — applied by AAP automation.
+            Permanently remediated via CVE-targeted package upgrade — applied by AAP automation.
             Emergency CR {{ cr_number | default('N/A') }}.
+            Reboot performed: {{ reboot_performed | default('n/a') }}.
         status_code: 200
       register: insights_status_result
       when:
@@ -117,10 +121,10 @@
           work_notes: |
             [AUTOMATED] Red Hat Insights CVE status updated.
 
-            {{ triggered_cve | default('CVE-2026-43037') }} marked as "Resolved"
+            {{ triggered_cve | default('CVE-2026-109618') }} marked as "Resolved"
             across {{ insights_inventory_ids | default([]) | length }} systems in Red Hat Insights.
 
-            Permanent package update + reboot completed — no follow-up kernel CR required.
+            Permanent package upgrade completed — no follow-up CR required.
       when:
         - inc_dev_sys_id is defined and inc_dev_sys_id | length > 0
         - insights_status_result is succeeded
@@ -132,10 +136,10 @@
           work_notes: |
             [AUTOMATED] Red Hat Insights CVE status updated.
 
-            {{ triggered_cve | default('CVE-2026-43037') }} marked as "Resolved"
+            {{ triggered_cve | default('CVE-2026-109618') }} marked as "Resolved"
             across {{ insights_inventory_ids | default([]) | length }} systems in Red Hat Insights.
 
-            Permanent package update + reboot completed — no follow-up kernel CR required.
+            Permanent package upgrade completed — no follow-up CR required.
       when:
         - inc_prod_sys_id is defined and inc_prod_sys_id | length > 0
         - insights_status_result is succeeded
@@ -145,11 +149,12 @@
         review_notes: |
           Production patching complete — ready for human review.
 
-          Strategy: {{ strategy_used | default('full_patch_reboot') }}
+          Strategy: {{ strategy_used | default('package_upgrade') }}
           CVEs patched: {{ cves_patched | default([]) | join(', ') }}
           Services healthy: {{ services_healthy | default('unknown') }}
           Trading Service: UP (all environments)
           Kernel after: {{ kernel_after | default('see host reports') }}
+          Reboot performed: {{ reboot_performed | default('n/a') }}
 
           SBOM Diff Summary:
           - Packages added: {{ sbom_diff_summary.added | default([]) | length }}
@@ -159,7 +164,7 @@
           Red Hat Insights: CVE marked as "Resolved" on {{ insights_inventory_ids | default([]) | length }} systems
           Dev Incident: resolved
           Prod Incident: resolved
-          CMDB CIs: updated with new kernel version
+          CMDB CIs: updated
           Follow-up CR: none (this remediation is the permanent fix)
 
     - name: Move CR to Review

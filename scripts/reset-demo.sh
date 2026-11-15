@@ -126,6 +126,17 @@ if [[ -n "$EXISTING_IDS" && "$EXISTING_IDS" != "None" ]]; then
 else
   echo "  No existing demo instances found"
 fi
+
+# Also tear down one-off PHP probe hosts from earlier experiments
+PROBE_IDS=$(aws ec2 describe-instances \
+  --region "$REGION" \
+  --filters "Name=tag:Name,Values=php-probe-01" "Name=instance-state-name,Values=running,stopped,stopping" \
+  --query "Reservations[].Instances[].InstanceId" \
+  --output text 2>/dev/null || true)
+if [[ -n "$PROBE_IDS" && "$PROBE_IDS" != "None" ]]; then
+  echo "  Terminating leftover php-probe instance(s): ${PROBE_IDS}"
+  aws ec2 terminate-instances --region "$REGION" --instance-ids $PROBE_IDS > /dev/null
+fi
 echo ""
 
 # --- Step 4: Launch fresh instances ---
@@ -325,8 +336,42 @@ for i in json.load(sys.stdin):
   fi
   echo ""
 
-  # Full-patch demo does not need kpatch tooling preinstalled
-  echo "  Skipping kpatch install (full patch + reboot demo)"
+  # Seed vulnerable PHP so the demo CVE (CVE-2026-109618 / RHSA-2026:87151) is present.
+  # Default AppStream php is already patched — install then downgrade to NVR 8.0.30-6.el9_8.
+  echo "  Seeding vulnerable PHP (8.0.30-6.el9_8) on all demo hosts..."
+  seed_php_one() {
+    local hname="$1" hip="$2"
+    ssh $SSH_OPTS -i "$SSH_KEY" "${SSH_USER}@${hip}" bash -s <<'PHPSCRPT'
+set -euo pipefail
+sudo dnf install -y php php-cli php-common php-fpm 2>&1 | tail -5
+# Allow downgrade to the last vulnerable build for this demo story
+sudo dnf downgrade -y php-8.0.30-6.el9_8 php-cli-8.0.30-6.el9_8 \
+  php-common-8.0.30-6.el9_8 php-fpm-8.0.30-6.el9_8 2>&1 | tail -10 \
+  || sudo dnf install -y --allowerasing \
+       php-8.0.30-6.el9_8 php-cli-8.0.30-6.el9_8 \
+       php-common-8.0.30-6.el9_8 php-fpm-8.0.30-6.el9_8 2>&1 | tail -10
+rpm -q php
+sudo dnf updateinfo list --cve CVE-2026-109618 2>/dev/null | head -5 || true
+sudo insights-client 2>&1 | tail -3
+PHPSCRPT
+  }
+
+  while IFS=: read -r sname sip; do
+    [[ -z "$sip" ]] && continue
+    echo "  Seeding PHP on ${sname}..."
+    seed_php_one "$sname" "$sip" &
+  done < <(aws ec2 describe-instances \
+    --region "$REGION" \
+    --filters "Name=tag:demo,Values=patching-full" "Name=instance-state-name,Values=running" \
+    --query "Reservations[].Instances[].{Name:Tags[?Key=='Name']|[0].Value,IP:PublicIpAddress}" \
+    --output json 2>/dev/null | python3 -c "
+import json, sys
+for i in json.load(sys.stdin):
+    if i.get('Name') and i.get('IP'):
+        print(f\"{i['Name']}:{i['IP']}\")
+")
+  wait
+  echo "  [OK] Vulnerable PHP seeded on fleet"
   echo ""
 fi
 

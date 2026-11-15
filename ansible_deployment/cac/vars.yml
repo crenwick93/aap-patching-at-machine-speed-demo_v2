@@ -65,11 +65,12 @@ controller_credentials:
       SN_PASSWORD: "{{ servicenow_password }}"
 
   - name: "AAP Controller Full Patch"
-    description: "Controller credential for internal workflow approval automation"
+    description: "Controller credential for workflow approval automation (reachable from EEs)"
     organization: "{{ aap_organization }}"
     credential_type: "Red Hat Ansible Automation Platform"
     inputs:
-      host: "{{ aap_internal_host }}"
+      # Use gateway URL — EEs cannot reliably reach AAP_INTERNAL_HOST (private IP)
+      host: "{{ aap_hostname | regex_replace('/+$', '') }}"
       oauth_token: "{{ aap_token }}"
       verify_ssl: "{{ aap_validate_certs }}"
 
@@ -143,7 +144,7 @@ controller_templates:
       - "Demo SSH Key Full Patch"
 
   - name: "Assess Patch Exposure"
-    description: "Intelligence: kernel version, advisories, CVEs, patch availability, SBOM"
+    description: "Intelligence: advisories, CVEs, package fix availability, reboot needed?, SBOM"
     organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
@@ -156,7 +157,7 @@ controller_templates:
       - "ServiceNow PDI Full Patch"
 
   - name: "Apply Full Patch"
-    description: "Package upgrade + reboot — permanent CVE remediation"
+    description: "CVE-targeted package upgrade; reboot only if needs-restarting requires it"
     organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
@@ -169,7 +170,7 @@ controller_templates:
       - "ServiceNow PDI Full Patch"
 
   - name: "Post-checks Full Patch"
-    description: "Verify reboot complete, services healthy, CVE cleared, SBOM diff, CI update"
+    description: "Verify CVE cleared, no pending reboot, services healthy, SBOM diff, CI update"
     organization: "{{ aap_organization }}"
     job_type: "run"
     project: "Full Patching at Machine Speed"
@@ -233,8 +234,9 @@ controller_templates:
 controller_workflows:
   - name: "Trading Service: CVE Full Patch Response"
     description: >-
-      EDA-triggered workflow: assess exposure, open Incidents, run canary full patch
-      + reboot on dev, raise emergency CR for prod, await approval, patch+reboot prod, close ITIL records.
+      EDA-triggered workflow: assess exposure, open Incidents, run canary package upgrade
+      on dev (reboot only if required), raise emergency CR for prod, await approval,
+      patch prod, close ITIL records.
     organization: "{{ aap_organization }}"
     ask_variables_on_launch: true
     simplified_workflow_nodes:
@@ -252,9 +254,9 @@ controller_workflows:
       - identifier: "Pre-check All Hosts"
         unified_job_template: "Pre-check System Readiness Full Patch"
         success_nodes:
-          - "Canary: Apply Full Patch"
+          - "Canary: Apply Patch"
 
-      - identifier: "Canary: Apply Full Patch"
+      - identifier: "Canary: Apply Patch"
         unified_job_template: "Apply Full Patch"
         limit: "tag_env_dev"
         success_nodes:
@@ -279,9 +281,9 @@ controller_workflows:
             EDA will auto-approve this node when the CR is approved in ServiceNow.
           timeout: 0
         success_nodes:
-          - "Apply Full Patch (Prod)"
+          - "Apply Patch (Prod)"
 
-      - identifier: "Apply Full Patch (Prod)"
+      - identifier: "Apply Patch (Prod)"
         unified_job_template: "Apply Full Patch"
         limit: "tag_env_prod"
         success_nodes:
