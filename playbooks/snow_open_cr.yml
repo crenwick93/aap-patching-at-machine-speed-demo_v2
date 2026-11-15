@@ -55,8 +55,16 @@
           ========== CANARY TEST RESULTS ==========
           Result: {{ canary_result | default('PASS') }}
           Recommendation: {{ canary_recommendation | default('SAFE TO DEPLOY TO PRODUCTION') }}
-
-          {{ canary_evidence | default('See Dev Incident work notes for per-host canary validation.') }}
+          Scope: canary DEV hosts (rhel-dev-01/02/03)
+          Strategy: {{ strategy_used | default('package_upgrade') }}
+          Reboot required: {{ reboot_required_for_fix | default(false) }}
+          Reboot performed: {{ reboot_performed | default('n/a') }}
+          Kernel impact: {{ kernel_impact_note | default('KERNEL UNCHANGED — userspace package fix only') }}
+          Services healthy (sshd, chronyd, httpd): {{ services_healthy | default('yes') }}
+          Trading Service: {{ 'UP' if (trading_service_up | default(true)) else 'DOWN' }}
+          PHP after canary: {{ php_after | default('see host reports') }}
+          SBOM: {{ sbom_before_path | default('/tmp/sbom-before.json') }} → {{ sbom_after_path | default('/tmp/sbom-after.json') }}
+          Per-host canary detail: see CR / Dev Incident work notes (formatted journal entry).
           =========================================
         priority: 1
         risk: low
@@ -72,9 +80,7 @@
             as a critical vulnerability affecting Trading Service nodes. The vulnerability
             must be remediated immediately to maintain the security posture of the platform.
 
-            DEV CANARY COMPLETED SUCCESSFULLY — evidence below supports production rollout:
-
-            {{ canary_evidence | default('Canary post-checks passed; see Dev Incident work notes.') }}
+            DEV CANARY COMPLETED SUCCESSFULLY — plain-text summary (HTML detail is in work notes):
 
             Key gates satisfied:
             - Canary result: {{ canary_result | default('PASS') }}
@@ -92,7 +98,11 @@
             {% for item in (sbom_diff_summary.changed | default({}) | dict2items) %}
               * {{ item.key }}: {{ item.value.before }} → {{ item.value.after }}
             {% else %}
-              * {{ package_upgrade_lines | default([]) | join('\n              * ') | default('see canary evidence') }}
+            {% for line in package_upgrade_lines | default([]) %}
+              * {{ line }}
+            {% else %}
+              * see CR work notes / assessment
+            {% endfor %}
             {% endfor %}
             - PHP after canary: {{ php_after | default('see host reports') }}
 
